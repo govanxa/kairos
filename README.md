@@ -152,8 +152,6 @@ Kairos is built as a single MVP phase combining the Core Engine and Validation L
 | **Validation Engine** | Structural and semantic validation between steps |
 | **Failure Router** | Policy-driven recovery: retry, re-plan, skip, abort |
 
-Full architecture docs: [`docs/architecture/`](docs/architecture/architecture.md)
-
 ---
 
 ## Status
