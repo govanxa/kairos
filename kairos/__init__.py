@@ -4,6 +4,7 @@ __version__ = "0.1.0"
 
 # Public enums
 from kairos.enums import (
+    AttemptStatus,
     FailureAction,
     ForeachPolicy,
     LogVerbosity,
@@ -36,8 +37,12 @@ from kairos.security import (
 # State management
 from kairos.state import ScopedStateProxy, StateSnapshot, StateStore
 
+# Step definitions
+from kairos.step import SKIP, AttemptRecord, Step, StepConfig, StepContext, StepResult
+
 __all__ = [
     # Enums (public)
+    "AttemptStatus",
     "FailureAction",
     "ForeachPolicy",
     "LogVerbosity",
@@ -63,4 +68,11 @@ __all__ = [
     "ScopedStateProxy",
     "StateSnapshot",
     "StateStore",
+    # Step definitions
+    "SKIP",
+    "AttemptRecord",
+    "Step",
+    "StepConfig",
+    "StepContext",
+    "StepResult",
 ]
