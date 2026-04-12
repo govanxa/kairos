@@ -24,6 +24,15 @@ from kairos.exceptions import (
     ValidationError,
 )
 
+# Security utilities
+from kairos.security import (
+    DEFAULT_SENSITIVE_PATTERNS,
+    redact_sensitive,
+    sanitize_exception,
+    sanitize_path,
+    sanitize_retry_context,
+)
+
 __all__ = [
     # Enums (public)
     "FailureAction",
@@ -41,4 +50,10 @@ __all__ = [
     "SecurityError",
     "StateError",
     "ValidationError",
+    # Security utilities
+    "DEFAULT_SENSITIVE_PATTERNS",
+    "redact_sensitive",
+    "sanitize_exception",
+    "sanitize_path",
+    "sanitize_retry_context",
 ]
