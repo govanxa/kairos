@@ -1,5 +1,8 @@
 # Kairos
 
+[![Python](https://img.shields.io/badge/python-3.11%2B-blue)](https://github.com/govanxa/kairos)
+[![License](https://img.shields.io/badge/license-Apache%202.0-green)](https://github.com/govanxa/kairos/blob/main/LICENSE)
+
 > *The right action, at the right time.*
 
 **Security-hardened, model-agnostic Python SDK for contract-enforced AI workflows with automatic recovery.**
