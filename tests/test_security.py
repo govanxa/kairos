@@ -826,6 +826,63 @@ class TestRedactSensitiveListRecursion:
 # ---------------------------------------------------------------------------
 
 
+class TestSerializationSecurity:
+    """Cross-cutting serialization security — from_dict, YAML, path injection."""
+
+    def test_from_dict_does_not_reconstruct_actions(self):
+        """TaskGraph.from_dict() never reconstructs callable actions."""
+        from kairos.plan import TaskGraph, _noop_action
+
+        data = {
+            "name": "safe",
+            "steps": [
+                {
+                    "name": "s1",
+                    "depends_on": [],
+                    "config": {},
+                    "action": "os.system('evil')",
+                }
+            ],
+        }
+        graph = TaskGraph.from_dict(data)
+        assert graph.steps[0].action is _noop_action
+
+    def test_yaml_uses_safe_load(self):
+        """The plan module source does not import yaml.load (only safe_load allowed).
+
+        plan.py does not use YAML at all, but verify that it does not import
+        unsafe yaml loading patterns. The SDK-wide contract is: if yaml is ever
+        used, it must be yaml.safe_load exclusively.
+        """
+        import inspect
+
+        import kairos.plan as plan_module
+
+        source = inspect.getsource(plan_module)
+        # Must not contain yaml.load (only yaml.safe_load is permitted)
+        assert "yaml.load(" not in source
+        # Also verify no yaml.unsafe_load
+        assert "yaml.unsafe_load" not in source
+
+    def test_path_traversal_rejected(self):
+        """sanitize_path rejects path traversal attempts."""
+        result = sanitize_path("../../../etc/passwd")
+        assert ".." not in result
+        assert "/" not in result
+
+    def test_special_chars_sanitized_in_filenames(self):
+        """Special characters in workflow names are sanitized to underscores."""
+        result = sanitize_path("my<workflow>|name:v1")
+        # Only [a-zA-Z0-9_-] should remain (plus dots in some cases)
+        assert "<" not in result
+        assert ">" not in result
+        assert "|" not in result
+        assert ":" not in result
+
+
+# ---------------------------------------------------------------------------
+
+
 class TestRelativePathStripping:
     """Relative paths (../../) must also be stripped to filename only."""
 
