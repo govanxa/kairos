@@ -59,12 +59,69 @@ print(result.output)  # "HELLO, KAIROS!"
 
 ## Key Features
 
-- **Contract Enforcement** — every step declares its input/output shape. Validation runs automatically between steps. Broken data never silently propagates.
-- **Sanitized Retry Context** — when a step retries, only structured metadata (field names, types, attempt number) is injected. Raw LLM output and exception messages are never fed back into prompts, preventing prompt injection via error messages.
-- **Scoped State Access** — steps only see the state keys they need. `read_keys` and `write_keys` enforce least-privilege per step.
-- **Sensitive Key Redaction** — keys matching patterns like `password`, `token`, `api_key` are automatically redacted in logs, exports, and final state.
-- **Configurable Failure Recovery** — three-level policy hierarchy (Step → Workflow → Kairos defaults) with retry, skip, abort, and re-plan actions.
-- **Model-Agnostic** — any callable that accepts a `StepContext` works. Plain functions, API calls, local models, or no LLM at all.
+### Contract Enforcement
+Every step declares its input/output shape. Validation runs automatically between steps. Broken data never silently propagates.
+
+```python
+from kairos import Workflow, Step, Schema
+
+schema = Schema({
+    "name": str,
+    "products": list[str],
+    "score": float | None,
+})
+
+step = Step(
+    name="analyze",
+    action=my_analysis_fn,
+    output_contract=schema,
+)
+```
+
+### Security-First Design
+- **Sanitized retry context** — when a step retries, only structured metadata (field names, types, attempt number) is injected. Raw LLM output and exception messages are never fed back into prompts, preventing prompt injection via error messages.
+- **Scoped state access** — steps only see the state keys they need. `read_keys` and `write_keys` enforce least-privilege per step.
+- **Sensitive key redaction** — keys matching patterns like `password`, `token`, `api_key` are automatically redacted in logs, exports, and final state.
+- **Exception sanitization** — credentials, file paths, and raw stack traces are stripped before any exception is stored or logged.
+
+### Configurable Failure Recovery
+```python
+from kairos import Step, FailurePolicy, FailureAction
+
+step = Step(
+    name="critical_step",
+    action=critical_fn,
+    failure_policy=FailurePolicy(
+        on_validation_fail=FailureAction.RETRY,
+        on_execution_fail=FailureAction.ABORT,
+        max_retries=3,
+    ),
+)
+```
+
+Three-level policy hierarchy: Step → Workflow → Kairos defaults. Most specific wins.
+
+### Multi-Step Workflows with Dependencies
+```python
+from kairos import Workflow, Step
+
+workflow = Workflow(
+    name="competitive_analysis",
+    steps=[
+        Step(name="fetch_competitors", action=fetch_fn),
+        Step(name="analyze_each", action=analyze_fn,
+             depends_on=["fetch_competitors"],
+             foreach="fetch_competitors"),
+        Step(name="summarize", action=summarize_fn,
+             depends_on=["analyze_each"]),
+    ],
+)
+
+result = workflow.run({"industry": "fintech"})
+```
+
+### Model-Agnostic
+Kairos doesn't care which LLM powers your steps. Any callable that accepts a `StepContext` works — plain functions, API calls, local models, or no LLM at all.
 
 ---
 
