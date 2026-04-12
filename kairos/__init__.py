@@ -25,6 +25,9 @@ from kairos.exceptions import (
     ValidationError,
 )
 
+# Plan
+from kairos.plan import TaskGraph
+
 # Security utilities
 from kairos.security import (
     DEFAULT_SENSITIVE_PATTERNS,
@@ -75,4 +78,6 @@ __all__ = [
     "StepConfig",
     "StepContext",
     "StepResult",
+    # Plan
+    "TaskGraph",
 ]
