@@ -33,6 +33,9 @@ from kairos.security import (
     sanitize_retry_context,
 )
 
+# State management
+from kairos.state import ScopedStateProxy, StateSnapshot, StateStore
+
 __all__ = [
     # Enums (public)
     "FailureAction",
@@ -56,4 +59,8 @@ __all__ = [
     "sanitize_exception",
     "sanitize_path",
     "sanitize_retry_context",
+    # State management
+    "ScopedStateProxy",
+    "StateSnapshot",
+    "StateStore",
 ]
