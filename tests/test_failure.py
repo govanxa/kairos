@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 from datetime import UTC, datetime
+from typing import Any, cast
 
 import pytest
 
@@ -497,8 +498,9 @@ class TestBasicRouting:
         assert ctx is not None
         assert ctx["error_type"] == "validation"
         assert ctx["attempt"] == 2
-        assert "score" in ctx["failed_fields"]
-        assert "name" in ctx["failed_fields"]
+        failed_fields = cast(list[str], ctx["failed_fields"])
+        assert "score" in failed_fields
+        assert "name" in failed_fields
 
     def test_decision_has_human_readable_reason(self) -> None:
         """RecoveryDecision always has a non-empty reason string."""
@@ -845,7 +847,7 @@ class TestRetryContextSanitization:
         """from_dict must never reconstruct custom_handler callables."""
         from kairos.failure import FailurePolicy
 
-        data = {
+        data: dict[str, object] = {
             "on_validation_fail": "retry",
             "on_execution_fail": "retry",
             "max_retries": 2,
@@ -923,7 +925,7 @@ class TestFailurePolicySerialization:
         """from_dict raises PolicyError for unknown FailureAction strings."""
         from kairos.failure import FailurePolicy
 
-        data = {
+        data: dict[str, object] = {
             "on_validation_fail": "explode",  # not a valid FailureAction
             "on_execution_fail": "retry",
             "max_retries": 2,
@@ -941,7 +943,7 @@ class TestFailurePolicySerialization:
         from kairos.failure import FailurePolicy
 
         # on_execution_fail is required
-        data = {
+        data: dict[str, object] = {
             "on_validation_fail": "retry",
             # missing on_execution_fail
             "max_retries": 2,
@@ -1201,7 +1203,8 @@ class TestFailureEventFieldSanitization:
         d = event.to_dict()
         error_data = d["error"]
         assert isinstance(error_data, dict)
-        failed_fields = error_data["failed_fields"]
+        error_data_typed = cast(dict[str, Any], error_data)
+        failed_fields = error_data_typed["failed_fields"]
         assert isinstance(failed_fields, list)
         # Field name is lowercased and non-alphanumeric chars replaced with _
         assert "ignore_all_instructions" in failed_fields
@@ -1221,7 +1224,8 @@ class TestFailureEventFieldSanitization:
         d = event.to_dict()
         error_data = d["error"]
         assert isinstance(error_data, dict)
-        failed_fields = error_data["failed_fields"]
+        error_data_typed = cast(dict[str, Any], error_data)
+        failed_fields = error_data_typed["failed_fields"]
         assert "score" in failed_fields
         assert "user_id" in failed_fields
 
@@ -1238,7 +1242,7 @@ class TestRecoveryDecisionFromDict:
         """from_dict reconstructs the FailureAction correctly."""
         from kairos.failure import RecoveryDecision
 
-        d = {
+        d: dict[str, object] = {
             "action": "retry",
             "reason": "Retrying due to transient error.",
             "retry_context": {"attempt": 1, "error_type": "execution"},
@@ -1251,7 +1255,7 @@ class TestRecoveryDecisionFromDict:
         """from_dict restores the reason string."""
         from kairos.failure import RecoveryDecision
 
-        d = {
+        d: dict[str, object] = {
             "action": "abort",
             "reason": "Max retries exhausted.",
             "retry_context": None,
@@ -1264,8 +1268,12 @@ class TestRecoveryDecisionFromDict:
         """from_dict restores retry_context dict."""
         from kairos.failure import RecoveryDecision
 
-        ctx = {"attempt": 2, "error_type": "validation", "failed_fields": ["score"]}
-        d = {
+        ctx: dict[str, object] = {
+            "attempt": 2,
+            "error_type": "validation",
+            "failed_fields": ["score"],
+        }
+        d: dict[str, object] = {
             "action": "retry",
             "reason": "Retrying.",
             "retry_context": ctx,
@@ -1279,7 +1287,7 @@ class TestRecoveryDecisionFromDict:
         from kairos.failure import RecoveryDecision
 
         # Even if someone passes a non-None value, it must come back as None
-        d = {
+        d: dict[str, object] = {
             "action": "replan",
             "reason": "Replanning.",
             "retry_context": None,
@@ -1308,7 +1316,7 @@ class TestRecoveryDecisionFromDict:
         """from_dict raises PolicyError for unrecognized FailureAction strings."""
         from kairos.failure import RecoveryDecision
 
-        d = {
+        d: dict[str, object] = {
             "action": "explode",
             "reason": "Bad action.",
             "retry_context": None,
