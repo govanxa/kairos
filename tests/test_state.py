@@ -82,7 +82,7 @@ class TestFailurePaths:
     def test_set_lambda_raises_state_error(self, store: StateStore):
         """Lambda functions are not JSON-serializable and must be rejected."""
         with pytest.raises(StateError):
-            store.set("fn", lambda x: x)
+            store.set("fn", lambda x: x)  # type: ignore[arg-type]
 
     def test_set_exceeds_max_total_size_raises_state_error(self):
         """set() raises StateError when total state size exceeds max_total_size."""
@@ -122,7 +122,7 @@ class TestFailurePaths:
         """An object with a custom __deepcopy__ method is not JSON-safe and must be rejected."""
 
         class TrickyObj:
-            def __deepcopy__(self, memo: dict) -> TrickyObj:  # pragma: no cover
+            def __deepcopy__(self, memo: dict[int, object]) -> TrickyObj:  # pragma: no cover
                 return TrickyObj()
 
         with pytest.raises(StateError):
@@ -160,18 +160,18 @@ class TestBoundaryConditions:
     def test_overwrite_key_updates_total_size_correctly(self, store: StateStore):
         """Overwriting a key subtracts old size and adds new size — no double counting."""
         store.set("key", "x" * 10)
-        size_after_first = store._total_size
+        size_after_first = store._total_size  # pyright: ignore[reportPrivateUsage]
         store.set("key", "y" * 20)
-        size_after_second = store._total_size
+        size_after_second = store._total_size  # pyright: ignore[reportPrivateUsage]
         # The size should have grown by roughly the difference between the two values
         assert size_after_second > size_after_first
 
     def test_overwrite_key_with_smaller_value_reduces_total_size(self, store: StateStore):
         """Overwriting with a smaller value reduces the tracked total size."""
         store.set("key", "x" * 100)
-        size_large = store._total_size
+        size_large = store._total_size  # pyright: ignore[reportPrivateUsage]
         store.set("key", "y")
-        size_small = store._total_size
+        size_small = store._total_size  # pyright: ignore[reportPrivateUsage]
         assert size_small < size_large
 
     def test_empty_store_snapshot_has_empty_data(self, store: StateStore):
@@ -244,7 +244,7 @@ class TestBoundaryConditions:
         store.set("only_key", "only_value")
         store.delete("only_key")
         assert store.keys() == []
-        assert store._total_size == 0
+        assert store._total_size == 0  # pyright: ignore[reportPrivateUsage]
 
     def test_has_returns_false_for_nonexistent_key(self, store: StateStore):
         """has() returns False for a key that was never set."""
@@ -373,7 +373,7 @@ class TestBasicBehavior:
         store.restore(snap)
         # After restore, "b" is gone; size should reflect only "a"
         expected_size = len(json.dumps("x" * 100).encode("utf-8"))
-        assert store._total_size == expected_size
+        assert store._total_size == expected_size  # pyright: ignore[reportPrivateUsage]
 
     def test_to_dict_returns_all_key_value_pairs(self, populated_store: StateStore):
         """to_dict() returns a dict with all stored keys and their values."""
@@ -488,7 +488,7 @@ class TestBasicBehavior:
         s = StateStore(allow_non_serializable=True)
         obj = Obj()
         s.set("thing", obj)
-        assert s._total_size == sys.getsizeof(obj)
+        assert s._total_size == sys.getsizeof(obj)  # pyright: ignore[reportPrivateUsage]
 
 
 # ---------------------------------------------------------------------------
@@ -667,7 +667,7 @@ class TestSerialization:
         store.set("key", [1, 2, 3])
         snap = store.snapshot()
         # The snapshot data list object must not be the same as what the store holds
-        assert snap.data["key"] is not store._data["key"]
+        assert snap.data["key"] is not store._data["key"]  # pyright: ignore[reportPrivateUsage]
 
     def test_multiple_snapshots_are_independent(self, store: StateStore):
         """Multiple snapshots at different points in time are independent of each other."""
