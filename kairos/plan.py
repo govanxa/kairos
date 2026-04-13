@@ -18,6 +18,7 @@ from __future__ import annotations
 
 from collections import deque
 from dataclasses import dataclass, field
+from typing import Any, cast
 
 from kairos.enums import ForeachPolicy
 from kairos.exceptions import ConfigError, PlanError
@@ -104,7 +105,7 @@ class TaskGraph:
 
     name: str
     steps: list[Step]
-    metadata: dict[str, object] = field(default_factory=dict)
+    metadata: dict[str, object] = field(default_factory=lambda: {})
 
     def __post_init__(self) -> None:
         """Validate that name is a non-empty string.
@@ -112,7 +113,7 @@ class TaskGraph:
         Raises:
             ConfigError: If name is empty or whitespace-only.
         """
-        if not isinstance(self.name, str) or not self.name.strip():
+        if not self.name.strip():
             raise ConfigError(f"TaskGraph name must be a non-empty string, got {self.name!r}.")
 
     # ------------------------------------------------------------------
@@ -418,7 +419,7 @@ class TaskGraph:
         }
 
     @classmethod
-    def from_dict(cls, data: dict[str, object]) -> TaskGraph:
+    def from_dict(cls, data: dict[str, Any]) -> TaskGraph:
         """Reconstruct a TaskGraph from a plain dict (structural data only).
 
         Security contract: this method NEVER reconstructs step actions.
@@ -458,31 +459,41 @@ class TaskGraph:
             )
 
         raw_metadata = data.get("metadata", {})
-        metadata: dict[str, object] = dict(raw_metadata) if isinstance(raw_metadata, dict) else {}
+        metadata: dict[str, object] = (
+            dict(cast(dict[str, object], raw_metadata)) if isinstance(raw_metadata, dict) else {}
+        )
 
         # --- Reconstruct steps ---
         steps: list[Step] = []
-        for entry in raw_steps:
+        for entry in cast(list[Any], raw_steps):  # type: ignore[redundant-cast]
             if not isinstance(entry, dict):
                 raise ConfigError("TaskGraph.from_dict: each step entry must be a dict.")
+            step_dict = cast(dict[str, Any], entry)
 
-            step_name = entry.get("name")
+            step_name: Any = step_dict.get("name")
             if not isinstance(step_name, str):
                 got = type(step_name).__name__
                 raise ConfigError(
                     f"TaskGraph.from_dict: step 'name' must be a string, got {got!r}."
                 )
 
-            raw_depends_on = entry.get("depends_on", [])
+            raw_depends_on: Any = step_dict.get("depends_on", [])
             if not isinstance(raw_depends_on, list):
                 raise ConfigError(
                     f"TaskGraph.from_dict: step 'depends_on' must be a list for step {step_name!r}."
                 )
-            depends_on: list[str] = [str(d) for d in raw_depends_on]
+            depends_on: list[str] = [
+                str(d)
+                for d in cast(list[Any], raw_depends_on)  # type: ignore[redundant-cast]
+            ]
 
-            raw_config = entry.get("config", {})
+            raw_config: Any = step_dict.get("config", {})
             config_dict: dict[str, object] = (
-                {k: v for k, v in raw_config.items() if k in _KNOWN_CONFIG_KEYS}
+                {
+                    str(k): v
+                    for k, v in cast(dict[str, Any], raw_config).items()
+                    if k in _KNOWN_CONFIG_KEYS
+                }
                 if isinstance(raw_config, dict)
                 else {}
             )
