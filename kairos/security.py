@@ -111,7 +111,7 @@ _VALIDATION_FIELD_MAX_LEN = 100
 _VALIDATION_TYPE_MAX_LEN = 40
 
 
-def _sanitize_validation_token(value: str) -> str:
+def sanitize_validation_token(value: str) -> str:
     """Sanitize a validation field name for safe inclusion in retry context.
 
     Normalizes to lowercase first, then allows only ``[a-z0-9_.[\\]-]`` —
@@ -267,14 +267,14 @@ def sanitize_retry_context(
 
         case "validation":
             errors = validation_errors or []
-            failed_fields: list[str] = [_sanitize_validation_token(e["field"]) for e in errors]
+            failed_fields: list[str] = [sanitize_validation_token(e["field"]) for e in errors]
             # Use the sanitized field name as the key to avoid injection via key names.
             expected_types: dict[str, str] = {
-                _sanitize_validation_token(e["field"]): _sanitize_type_token(e["expected"])
+                sanitize_validation_token(e["field"]): _sanitize_type_token(e["expected"])
                 for e in errors
             }
             actual_types: dict[str, str] = {
-                _sanitize_validation_token(e["field"]): _sanitize_type_token(e["actual"])
+                sanitize_validation_token(e["field"]): _sanitize_type_token(e["actual"])
                 for e in errors
             }
             return {
