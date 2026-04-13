@@ -76,6 +76,7 @@ ignore = [
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**/*.py" = ["S101", "T20"]  # allow assert and print in tests
+"examples/**/*.py" = ["T20", "S101"]  # allow print and assert in examples
 
 [tool.mypy]
 python_version = "3.11"
