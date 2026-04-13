@@ -16,6 +16,8 @@ This is the workflow from the Kairos architecture mockup:
   4. Generate the final report from research + analysis
 """
 
+from typing import Any, cast
+
 from kairos import (
     SKIP,
     FailureAction,
@@ -62,16 +64,16 @@ report_schema = Schema(
 # ---------------------------------------------------------------------------
 
 
-def fetch_competitors(ctx: StepContext) -> dict[str, object]:
+def fetch_competitors(ctx: StepContext) -> dict[str, Any]:
     """Fetch the list of competitors to analyze."""
     # In a real workflow, this might call an API or database.
-    competitors = ctx.state.get("competitors")
+    competitors = cast(list[str], ctx.state.get("competitors"))
     return {"competitors": competitors, "count": len(competitors)}
 
 
-def research_competitor(ctx: StepContext) -> dict[str, object]:
+def research_competitor(ctx: StepContext) -> dict[str, Any]:
     """Research a single competitor (runs once per item via foreach)."""
-    competitor = ctx.item
+    competitor = cast(str, ctx.item)
     # In a real workflow, this would call an LLM or scrape data.
     # Here we simulate with deterministic output.
     research = {
@@ -101,9 +103,9 @@ def research_competitor(ctx: StepContext) -> dict[str, object]:
     )
 
 
-def analyze_market(ctx: StepContext) -> dict[str, object]:
+def analyze_market(ctx: StepContext) -> dict[str, Any]:
     """Analyze the overall market positioning."""
-    fetch_data = ctx.inputs["fetch_competitors"]
+    fetch_data = cast(dict[str, Any], ctx.inputs["fetch_competitors"])
     count = fetch_data["count"]
     return {
         "market_size": "$4.2B",
@@ -128,15 +130,15 @@ def check_compliance(ctx: StepContext) -> object:
     return {"compliant": True, "standard": "SOC2"}
 
 
-def generate_report(ctx: StepContext) -> dict[str, object]:
+def generate_report(ctx: StepContext) -> dict[str, Any]:
     """Generate the final competitive analysis report."""
-    research_results = ctx.inputs["research"]
-    analysis = ctx.inputs["analyze"]
+    research_results = cast(list[dict[str, Any]], ctx.inputs["research"])
+    analysis = cast(dict[str, Any], ctx.inputs["analyze"])
 
-    competitor_names = [r["name"] for r in research_results]
-    all_products = []
+    competitor_names: list[str] = [r["name"] for r in research_results]
+    all_products: list[str] = []
     for r in research_results:
-        all_products.extend(r["products"])
+        all_products.extend(cast(list[str], r["products"]))
 
     return {
         "title": "Competitive Analysis Report",
@@ -250,7 +252,7 @@ if __name__ == "__main__":
     print()
 
     # The report
-    report = result.step_results["report"].output
+    report = cast(dict[str, Any], result.step_results["report"].output)
     print("REPORT: " + report["title"])
     print("-" * 40)
     print(f"Competitors analyzed: {report['competitor_count']}")
