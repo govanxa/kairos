@@ -62,6 +62,9 @@ from kairos.step import SKIP, AttemptRecord, Step, StepConfig, StepContext, Step
 # Validators
 from kairos.validators import CompositeValidator, LLMValidator, StructuralValidator, Validator
 
+# Workflow — top-level orchestrator (import last to avoid circular issues)
+from kairos.workflow import Workflow
+
 __all__ = [
     # Enums (public)
     "AttemptStatus",
@@ -120,4 +123,6 @@ __all__ = [
     "LLMValidator",
     "StructuralValidator",
     "Validator",
+    # Workflow
+    "Workflow",
 ]
