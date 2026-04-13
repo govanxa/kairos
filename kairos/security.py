@@ -12,6 +12,7 @@ from __future__ import annotations
 import fnmatch
 import os
 import re
+from typing import cast
 
 from kairos.exceptions import ConfigError, SecurityError
 
@@ -165,9 +166,10 @@ def _redact_list(items: list[object], patterns: list[str]) -> list[object]:
     result: list[object] = []
     for item in items:
         if isinstance(item, dict):
-            result.append(redact_sensitive(item, sensitive_patterns=patterns))
+            typed_item = cast(dict[str, object], item)
+            result.append(redact_sensitive(typed_item, sensitive_patterns=patterns))
         elif isinstance(item, list):
-            result.append(_redact_list(item, patterns))
+            result.append(_redact_list(cast(list[object], item), patterns))
         else:
             result.append(item)
     return result
@@ -322,9 +324,10 @@ def redact_sensitive(
         if _is_sensitive_key(key, patterns):
             result[key] = "[REDACTED]"
         elif isinstance(value, dict):
-            result[key] = redact_sensitive(value, sensitive_patterns=patterns)
+            typed_val = cast(dict[str, object], value)
+            result[key] = redact_sensitive(typed_val, sensitive_patterns=patterns)
         elif isinstance(value, list):
-            result[key] = _redact_list(value, patterns)
+            result[key] = _redact_list(cast(list[object], value), patterns)
         else:
             result[key] = value
     return result
