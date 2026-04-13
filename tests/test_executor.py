@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import time
 from datetime import datetime
+from typing import Any, cast
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -77,11 +78,6 @@ def _return_skip(ctx: StepContext) -> object:
 
 def _return_none(ctx: StepContext) -> None:
     return None
-
-
-def _read_input(ctx: StepContext) -> dict[str, object]:
-    """Step that reads its inputs and stores them as its output."""
-    return {"received": ctx.inputs}
 
 
 # ---------------------------------------------------------------------------
@@ -527,7 +523,7 @@ class TestBoundaryConditions:
         assert result.step_results["proc"].status == StepStatus.COMPLETED
         output = result.step_results["proc"].output
         assert isinstance(output, list)
-        assert len(output) == 1
+        assert len(cast(list[object], output)) == 1
 
 
 # ---------------------------------------------------------------------------
@@ -628,7 +624,7 @@ class TestForeachHappyPath:
         assert result.step_results["proc"].status == StepStatus.COMPLETED
         output = result.step_results["proc"].output
         assert isinstance(output, list)
-        assert len(output) == 3
+        assert len(cast(list[object], output)) == 3
 
     def test_foreach_items_passed_correctly_via_ctx_item(self, state: StateStore) -> None:
         """Each foreach iteration should receive its item in ctx.item."""
@@ -656,7 +652,7 @@ class TestForeachHappyPath:
 
         stored = state.get("calc")
         assert isinstance(stored, list)
-        assert len(stored) == 2
+        assert len(cast(list[object], stored)) == 2
 
 
 class TestRetrySuccess:
@@ -980,8 +976,9 @@ class TestInputResolutionSecurity:
             upstream = ctx.inputs.get("producer")
             captured_input.append(upstream)
             # Mutate the input — should NOT affect state
-            if isinstance(upstream, dict) and isinstance(upstream.get("nested"), dict):
-                upstream["nested"]["value"] = 999
+            upstream_dict = cast(dict[str, Any], upstream) if isinstance(upstream, dict) else None
+            if upstream_dict is not None and isinstance(upstream_dict.get("nested"), dict):
+                cast(dict[str, Any], upstream_dict["nested"])["value"] = 999
             return {}
 
         def producer(ctx: StepContext) -> dict[str, object]:
@@ -1219,7 +1216,7 @@ class TestWorkflowResultSerialization:
         d = result.to_dict()
         step_results = d["step_results"]
         assert isinstance(step_results, dict)
-        for value in step_results.values():
+        for value in cast(dict[str, Any], step_results).values():
             assert isinstance(value, dict)
 
     def test_round_trip_fields_preserved(self, state: StateStore) -> None:
@@ -1247,7 +1244,7 @@ class TestWorkflowResultSerialization:
 
         assert restored.status == result.status
         assert restored.llm_calls == result.llm_calls
-        assert restored.duration_ms == pytest.approx(result.duration_ms)
+        assert restored.duration_ms == pytest.approx(float(result.duration_ms))  # pyright: ignore[reportUnknownMemberType]
         assert restored.timestamp == result.timestamp
         assert set(restored.step_results.keys()) == set(result.step_results.keys())
         assert restored.step_results["s"].status == result.step_results["s"].status
@@ -1343,13 +1340,13 @@ class TestRetryDelay:
         executor = StepExecutor(state=state)
         config = StepConfig(retry_delay=1.0, retry_backoff=2.0, retry_jitter=False)
 
-        delay_1 = executor._calculate_retry_delay(config, attempt=1)
-        delay_2 = executor._calculate_retry_delay(config, attempt=2)
-        delay_3 = executor._calculate_retry_delay(config, attempt=3)
+        delay_1 = executor._calculate_retry_delay(config, attempt=1)  # pyright: ignore[reportPrivateUsage]
+        delay_2 = executor._calculate_retry_delay(config, attempt=2)  # pyright: ignore[reportPrivateUsage]
+        delay_3 = executor._calculate_retry_delay(config, attempt=3)  # pyright: ignore[reportPrivateUsage]
 
-        assert delay_1 == pytest.approx(1.0 * 2.0**1)  # 2.0
-        assert delay_2 == pytest.approx(1.0 * 2.0**2)  # 4.0
-        assert delay_3 == pytest.approx(1.0 * 2.0**3)  # 8.0
+        assert delay_1 == pytest.approx(float(1.0 * 2.0**1))  # pyright: ignore[reportUnknownMemberType]
+        assert delay_2 == pytest.approx(float(1.0 * 2.0**2))  # pyright: ignore[reportUnknownMemberType]
+        assert delay_3 == pytest.approx(float(1.0 * 2.0**3))  # pyright: ignore[reportUnknownMemberType]
 
 
 # ---------------------------------------------------------------------------
@@ -1435,7 +1432,7 @@ class TestWorkflowResultFromDictDefensiveBranches:
         """When step_results is not a dict, from_dict should default to empty."""
         from kairos.executor import WorkflowResult
 
-        data = {
+        data: dict[str, Any] = {
             "status": "complete",
             "step_results": "not_a_dict",
             "final_state": {},
@@ -1450,7 +1447,7 @@ class TestWorkflowResultFromDictDefensiveBranches:
         """When final_state is not a dict, from_dict should default to empty."""
         from kairos.executor import WorkflowResult
 
-        data = {
+        data: dict[str, Any] = {
             "status": "complete",
             "step_results": {},
             "final_state": "not_a_dict",
@@ -1465,7 +1462,7 @@ class TestWorkflowResultFromDictDefensiveBranches:
         """When status is not a string, from_dict should raise ConfigError."""
         from kairos.executor import WorkflowResult
 
-        data = {
+        data: dict[str, Any] = {
             "status": 123,
             "step_results": {},
             "final_state": {},
@@ -1480,7 +1477,7 @@ class TestWorkflowResultFromDictDefensiveBranches:
         """When duration_ms is not numeric, from_dict should raise ConfigError."""
         from kairos.executor import WorkflowResult
 
-        data = {
+        data: dict[str, Any] = {
             "status": "complete",
             "step_results": {},
             "final_state": {},
@@ -1495,7 +1492,7 @@ class TestWorkflowResultFromDictDefensiveBranches:
         """When llm_calls is not numeric, from_dict should raise ConfigError."""
         from kairos.executor import WorkflowResult
 
-        data = {
+        data: dict[str, Any] = {
             "status": "complete",
             "step_results": {},
             "final_state": {},
@@ -1536,6 +1533,6 @@ class TestInternalDefensiveBranches:
         # Directly test _resolve_inputs with a non-serializable dependency output
         executor = StepExecutor(state=state)
         step = Step("consumer", capture, depends_on=["dep_step"])
-        state._data["dep_step"] = object()  # not JSON-serializable
-        inputs = executor._resolve_inputs(step)
+        state._data["dep_step"] = object()  # pyright: ignore[reportPrivateUsage]  # not JSON-serializable
+        inputs = executor._resolve_inputs(step)  # pyright: ignore[reportPrivateUsage]
         assert "dep_step" not in inputs
