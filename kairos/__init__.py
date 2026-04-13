@@ -2,6 +2,7 @@
 
 __version__ = "0.1.0"
 
+# Executor
 # Public enums
 from kairos.enums import (
     AttemptStatus,
@@ -24,6 +25,7 @@ from kairos.exceptions import (
     StateError,
     ValidationError,
 )
+from kairos.executor import ExecutorHooks, StepExecutor, WorkflowResult
 
 # Plan
 from kairos.plan import TaskGraph
@@ -44,6 +46,10 @@ from kairos.state import ScopedStateProxy, StateSnapshot, StateStore
 from kairos.step import SKIP, AttemptRecord, Step, StepConfig, StepContext, StepResult
 
 __all__ = [
+    # Executor
+    "ExecutorHooks",
+    "StepExecutor",
+    "WorkflowResult",
     # Enums (public)
     "AttemptStatus",
     "FailureAction",
