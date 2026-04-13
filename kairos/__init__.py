@@ -2,7 +2,6 @@
 
 __version__ = "0.1.0"
 
-# Executor
 # Public enums
 from kairos.enums import (
     AttemptStatus,
@@ -25,10 +24,15 @@ from kairos.exceptions import (
     StateError,
     ValidationError,
 )
+
+# Executor
 from kairos.executor import ExecutorHooks, StepExecutor, WorkflowResult
 
 # Plan
 from kairos.plan import TaskGraph
+
+# Schema
+from kairos.schema import ContractPair, FieldValidationError, Schema, ValidationResult
 
 # Security utilities
 from kairos.security import (
@@ -46,10 +50,6 @@ from kairos.state import ScopedStateProxy, StateSnapshot, StateStore
 from kairos.step import SKIP, AttemptRecord, Step, StepConfig, StepContext, StepResult
 
 __all__ = [
-    # Executor
-    "ExecutorHooks",
-    "StepExecutor",
-    "WorkflowResult",
     # Enums (public)
     "AttemptStatus",
     "FailureAction",
@@ -67,6 +67,17 @@ __all__ = [
     "SecurityError",
     "StateError",
     "ValidationError",
+    # Executor
+    "ExecutorHooks",
+    "StepExecutor",
+    "WorkflowResult",
+    # Plan
+    "TaskGraph",
+    # Schema
+    "ContractPair",
+    "FieldValidationError",
+    "Schema",
+    "ValidationResult",
     # Security utilities
     "DEFAULT_SENSITIVE_PATTERNS",
     "redact_sensitive",
@@ -84,6 +95,4 @@ __all__ = [
     "StepConfig",
     "StepContext",
     "StepResult",
-    # Plan
-    "TaskGraph",
 ]
