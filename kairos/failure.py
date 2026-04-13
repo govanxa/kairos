@@ -23,7 +23,7 @@ from typing import Any, cast
 from kairos.enums import FailureAction, FailureType
 from kairos.exceptions import ConfigError, PolicyError
 from kairos.schema import ValidationResult
-from kairos.security import _sanitize_validation_token, sanitize_exception, sanitize_retry_context
+from kairos.security import sanitize_exception, sanitize_retry_context, sanitize_validation_token
 
 # ---------------------------------------------------------------------------
 # FailurePolicy
@@ -235,10 +235,10 @@ class FailureEvent:
             error_repr = {
                 "valid": result.valid,
                 "error_count": len(result.errors),
-                # SECURITY: field names are sanitized via _sanitize_validation_token
+                # SECURITY: field names are sanitized via sanitize_validation_token
                 # to prevent injection payloads (e.g., "IGNORE ALL INSTRUCTIONS")
                 # from reaching log output or downstream consumers.
-                "failed_fields": [_sanitize_validation_token(e.field) for e in result.errors],
+                "failed_fields": [sanitize_validation_token(e.field) for e in result.errors],
             }
         else:
             # Fallback for unexpected error types — store class name only
@@ -342,7 +342,7 @@ class RecoveryDecision:
         retry_context_raw = data.get("retry_context")
         retry_context: dict[str, object] | None = None
         if isinstance(retry_context_raw, dict):
-            retry_context = retry_context_raw
+            retry_context = cast(dict[str, object], retry_context_raw)
 
         return cls(
             action=action,
