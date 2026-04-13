@@ -33,6 +33,8 @@ pip install kairos-ai[pydantic]    # Reuse existing Pydantic models as Kairos sc
 
 Kairos has its own built-in schema system that works out of the box. The Pydantic extra is for teams that already use [Pydantic](https://docs.pydantic.dev/) models in their codebase — instead of redefining your data shapes, you can pass them directly via `Schema.from_pydantic(YourModel)`.
 
+**New to Kairos?** Follow the [Getting Started guide](GETTING_STARTED.md) for a step-by-step tutorial.
+
 ---
 
 ## Quick Start
