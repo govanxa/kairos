@@ -7,7 +7,7 @@ import re
 from collections.abc import Callable
 from concurrent.futures import Future, ThreadPoolExecutor
 from concurrent.futures import TimeoutError as FutureTimeoutError
-from typing import Any, Protocol, runtime_checkable
+from typing import Any, Protocol, cast, runtime_checkable
 
 from kairos.enums import Severity
 from kairos.exceptions import ConfigError
@@ -120,7 +120,7 @@ def length(*, min: int | None = None, max: int | None = None) -> FieldValidator:
     def _validate(value: Any) -> bool | str:
         if not isinstance(value, (str, list)):
             return f"Expected a string or list, got {type(value).__name__!r}."
-        length_val = len(value)
+        length_val: int = len(value)  # type: ignore[arg-type,unused-ignore]
         kind = "string" if isinstance(value, str) else "list"
         if min is not None and length_val < min:
             return f"{kind.capitalize()} length {length_val} is below the minimum of {min}."
@@ -240,7 +240,7 @@ def not_empty() -> FieldValidator:
                 return "Value must not be empty or whitespace-only."
             return True
         if isinstance(value, list):
-            if len(value) == 0:
+            if len(value) == 0:  # type: ignore[arg-type,unused-ignore]
                 return "List must not be empty."
             return True
         # For other types, just verify truthiness
@@ -355,17 +355,18 @@ class StructuralValidator:
 
         # Phase 2: field-level validators (only on type-passing fields)
         if isinstance(data, dict):
+            data_dict = cast(dict[str, Any], data)
             for fd in schema.field_definitions:
                 # Skip fields that failed type checking
                 if fd.name in type_failed_fields:
                     continue
 
                 # Skip absent optional fields
-                if fd.name not in data:
+                if fd.name not in data_dict:
                     continue
 
                 # Skip optional fields present as None
-                value = data[fd.name]
+                value: Any = data_dict[fd.name]
                 if value is None and not fd.required:
                     continue
 
