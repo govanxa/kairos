@@ -75,7 +75,7 @@ ignore = [
 ]
 
 [tool.ruff.lint.per-file-ignores]
-"tests/**/*.py" = ["S101", "T20"]  # allow assert and print in tests
+"tests/**/*.py" = ["S101", "S105", "S106", "T20"]  # allow assert, hardcoded passwords (test fixtures), and print in tests
 "examples/**/*.py" = ["T20", "S101"]  # allow print and assert in examples
 
 [tool.mypy]
@@ -101,7 +101,7 @@ typeCheckingMode = "strict"
 
 [tool.coverage.run]
 source = ["kairos"]
-omit = ["kairos/cli.py", "kairos/adapters/*", "kairos/plugins/*", "kairos/interop/*"]
+omit = ["kairos/cli.py", "kairos/plugins/*", "kairos/interop/*"]
 
 [tool.coverage.report]
 fail_under = 90
