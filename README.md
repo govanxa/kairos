@@ -133,13 +133,14 @@ Kairos doesn't care which LLM powers your steps. Any callable that accepts a `St
 **Built-in adapters** (optional) remove the boilerplate for popular providers:
 
 ```python
-from kairos.adapters import claude, openai_model
+from kairos.adapters.claude import claude
+from kairos.adapters.openai_adapter import openai_adapter
 
 workflow = Workflow(
     name="ai-pipeline",
     steps=[
         Step(name="research", action=claude("Research {item}"), foreach="topics"),
-        Step(name="draft", action=openai_model("Write a report on: {research}")),
+        Step(name="draft", action=openai_adapter("Write a report on: {research}")),
     ],
 )
 ```
@@ -292,16 +293,18 @@ Kairos is built as a single MVP phase combining the Core Engine and Validation L
 | `executor+validation` | Done |
 | `workflow.py` (integration) | Done |
 
-893 tests passing, 97% coverage across 1761 statements in 12 source files.
+893 tests passing, 97% coverage across 1761 statements in 12 core source files.
 
 **Post-MVP — Ecosystem Phase**
 
 | Module | Status |
 |---|---|
-| Model Adapters (Claude, OpenAI) | In Progress |
+| Model Adapters (Claude, OpenAI) | Done |
 | Concurrent step execution | Planned |
 | Observability (RunLogger, CLI, Dashboard) | Planned |
 | Plugin System | Planned |
+
+1,007 total tests (including adapters), 99% adapter coverage.
 
 ---
 
@@ -320,6 +323,7 @@ pip install -e ".[dev]"
 | `examples/competitive_analysis.py` | Diamond dependencies, scoped state, SKIP sentinel, output contracts, full feature showcase |
 | `examples/broken_data.py` | What happens when bad data hits a contract — 4 scenarios showing Kairos blocking corrupted data |
 | `examples/scoped_state.py` | What happens when a step tries to read unauthorized state keys — security boundary demo |
+| `examples/llm_workflow.py` | Using LLM adapters — Claude and OpenAI in the same workflow with validation and retry |
 
 ---
 
