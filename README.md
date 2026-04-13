@@ -23,10 +23,15 @@ Without Kairos, agents silently pass broken outputs between steps, lose context 
 pip install kairos-sdk
 ```
 
-Optional extras:
+The core SDK has **zero external dependencies** — it runs on the Python standard library alone.
+
+**Optional extras:**
+
 ```bash
-pip install kairos-sdk[pydantic]    # Pydantic schema support
+pip install kairos-sdk[pydantic]    # Reuse existing Pydantic models as Kairos schemas
 ```
+
+Kairos has its own built-in schema system that works out of the box. The Pydantic extra is for teams that already use [Pydantic](https://docs.pydantic.dev/) models in their codebase — instead of redefining your data shapes, you can pass them directly via `Schema.from_pydantic(YourModel)`.
 
 ---
 
