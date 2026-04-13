@@ -6,6 +6,7 @@ __version__ = "0.1.0"
 from kairos.enums import (
     AttemptStatus,
     FailureAction,
+    FailureType,
     ForeachPolicy,
     LogVerbosity,
     Severity,
@@ -27,6 +28,15 @@ from kairos.exceptions import (
 
 # Executor
 from kairos.executor import ExecutorHooks, StepExecutor, WorkflowResult
+
+# Failure router
+from kairos.failure import (
+    KAIROS_DEFAULTS,
+    FailureEvent,
+    FailurePolicy,
+    FailureRouter,
+    RecoveryDecision,
+)
 
 # Plan
 from kairos.plan import TaskGraph
@@ -56,6 +66,7 @@ __all__ = [
     # Enums (public)
     "AttemptStatus",
     "FailureAction",
+    "FailureType",
     "ForeachPolicy",
     "LogVerbosity",
     "Severity",
@@ -70,6 +81,12 @@ __all__ = [
     "SecurityError",
     "StateError",
     "ValidationError",
+    # Failure router
+    "KAIROS_DEFAULTS",
+    "FailureEvent",
+    "FailurePolicy",
+    "FailureRouter",
+    "RecoveryDecision",
     # Executor
     "ExecutorHooks",
     "StepExecutor",
