@@ -26,6 +26,7 @@ from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import TimeoutError as FutureTimeoutError
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from typing import Any, cast
 
 from kairos.enums import AttemptStatus, ForeachPolicy, StepStatus, WorkflowStatus
 from kairos.exceptions import ExecutionError, StateError
@@ -177,7 +178,7 @@ class WorkflowResult:
         }
 
     @classmethod
-    def from_dict(cls, data: dict[str, object]) -> WorkflowResult:
+    def from_dict(cls, data: dict[str, Any]) -> WorkflowResult:
         """Reconstruct a WorkflowResult from a serialized dict.
 
         This is the inverse of to_dict(). Step results are reconstructed via
@@ -191,15 +192,19 @@ class WorkflowResult:
         """
         from kairos.step import StepResult  # local import avoids circular at module level
 
-        step_results_raw = data.get("step_results", {})
+        step_results_raw: Any = data.get("step_results", {})
         if not isinstance(step_results_raw, dict):
             step_results_raw = {}
+        sr_dict = cast(dict[str, Any], step_results_raw)
 
-        step_results = {name: StepResult.from_dict(sr) for name, sr in step_results_raw.items()}
+        step_results: dict[str, StepResult] = {
+            name: StepResult.from_dict(sr) for name, sr in sr_dict.items()
+        }
 
-        final_state = data.get("final_state", {})
-        if not isinstance(final_state, dict):
-            final_state = {}
+        raw_final_state: Any = data.get("final_state", {})
+        final_state: dict[str, object] = (
+            cast(dict[str, object], raw_final_state) if isinstance(raw_final_state, dict) else {}
+        )
 
         raw_status = data["status"]
         if not isinstance(raw_status, str):
@@ -584,9 +589,10 @@ class StepExecutor:
             )
 
         # --- Validate collection type: must be list or tuple, not str/dict ---
+        collection_type_name = type(collection).__name__
         if isinstance(collection, (str, dict)):
             error_msg = (
-                f"foreach key {foreach_key!r} has type {type(collection).__name__!r}; "
+                f"foreach key {foreach_key!r} has type {collection_type_name!r}; "
                 f"only list and tuple are valid foreach targets (strings and dicts are rejected)."
             )
             validation_exc = ExecutionError(error_msg, step_id=step.name)
@@ -612,7 +618,7 @@ class StepExecutor:
 
         # --- Handle empty collection ---
         try:
-            items = list(collection)  # type: ignore[call-overload]
+            items: list[object] = list(collection)  # type: ignore[call-overload]
         except TypeError as exc:
             error_type, error_message = sanitize_exception(exc)
             duration_ms = (time.monotonic() - start_mono) * 1000.0
