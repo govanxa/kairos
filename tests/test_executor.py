@@ -20,6 +20,7 @@ import pytest
 
 from kairos import (
     SKIP,
+    ConfigError,
     ExecutionError,
     ForeachPolicy,
     PlanError,
@@ -1460,8 +1461,8 @@ class TestWorkflowResultFromDictDefensiveBranches:
         result = WorkflowResult.from_dict(data)
         assert result.final_state == {}
 
-    def test_from_dict_non_string_status_raises_value_error(self) -> None:
-        """When status is not a string, from_dict should raise ValueError."""
+    def test_from_dict_non_string_status_raises_config_error(self) -> None:
+        """When status is not a string, from_dict should raise ConfigError."""
         from kairos.executor import WorkflowResult
 
         data = {
@@ -1472,11 +1473,11 @@ class TestWorkflowResultFromDictDefensiveBranches:
             "timestamp": "2026-01-01T00:00:00+00:00",
             "llm_calls": 0,
         }
-        with pytest.raises(ValueError, match="status.*must be a str"):
+        with pytest.raises(ConfigError, match="status.*must be a str"):
             WorkflowResult.from_dict(data)
 
-    def test_from_dict_non_numeric_duration_raises_value_error(self) -> None:
-        """When duration_ms is not numeric, from_dict should raise ValueError."""
+    def test_from_dict_non_numeric_duration_raises_config_error(self) -> None:
+        """When duration_ms is not numeric, from_dict should raise ConfigError."""
         from kairos.executor import WorkflowResult
 
         data = {
@@ -1487,11 +1488,11 @@ class TestWorkflowResultFromDictDefensiveBranches:
             "timestamp": "2026-01-01T00:00:00+00:00",
             "llm_calls": 0,
         }
-        with pytest.raises(ValueError, match="duration_ms.*must be numeric"):
+        with pytest.raises(ConfigError, match="duration_ms.*must be numeric"):
             WorkflowResult.from_dict(data)
 
-    def test_from_dict_non_numeric_llm_calls_raises_value_error(self) -> None:
-        """When llm_calls is not numeric, from_dict should raise ValueError."""
+    def test_from_dict_non_numeric_llm_calls_raises_config_error(self) -> None:
+        """When llm_calls is not numeric, from_dict should raise ConfigError."""
         from kairos.executor import WorkflowResult
 
         data = {
@@ -1502,7 +1503,7 @@ class TestWorkflowResultFromDictDefensiveBranches:
             "timestamp": "2026-01-01T00:00:00+00:00",
             "llm_calls": "not_a_number",
         }
-        with pytest.raises(ValueError, match="llm_calls.*must be numeric"):
+        with pytest.raises(ConfigError, match="llm_calls.*must be numeric"):
             WorkflowResult.from_dict(data)
 
 

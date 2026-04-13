@@ -161,7 +161,7 @@ Kairos is built as a single MVP phase combining the Core Engine and Validation L
 
 **Pre-release.** Architecture is complete. Implementation is in progress following strict TDD (tests before code).
 
-**Milestone 4: Integration** -- in progress (10 of 12 modules complete)
+**Milestone 4: Integration** -- in progress (11 of 12 modules complete)
 
 | Module | Status |
 |---|---|
@@ -175,11 +175,11 @@ Kairos is built as a single MVP phase combining the Core Engine and Validation L
 | `schema.py` | Done |
 | `validators.py` | Done |
 | `failure.py` | Done |
-| `executor+validation` | Up next |
-| `workflow.py` (integration) | Planned |
+| `executor+validation` | Done |
+| `workflow.py` (integration) | Up next |
 | Concurrent step execution | Planned (first post-MVP) |
 
-799 tests passing, 97% coverage across 1603 statements in 11 source files.
+836 tests passing, 97% coverage across 1695 statements in 11 source files.
 
 ---
 

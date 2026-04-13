@@ -26,14 +26,19 @@ from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import TimeoutError as FutureTimeoutError
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
-from kairos.enums import AttemptStatus, ForeachPolicy, StepStatus, WorkflowStatus
-from kairos.exceptions import ExecutionError, StateError
+from kairos.enums import AttemptStatus, FailureType, ForeachPolicy, StepStatus, WorkflowStatus
+from kairos.exceptions import ConfigError, ExecutionError, StateError
 from kairos.plan import TaskGraph
+from kairos.schema import ValidationResult
 from kairos.security import sanitize_exception, sanitize_retry_context
 from kairos.state import StateStore
 from kairos.step import SKIP, AttemptRecord, Step, StepConfig, StepContext, StepResult
+
+if TYPE_CHECKING:
+    from kairos.failure import FailureRouter
+    from kairos.validators import StructuralValidator
 
 logger = logging.getLogger(__name__)
 
@@ -117,6 +122,38 @@ class ExecutorHooks:
             step: The skipped step.
             reason: Human-readable explanation (e.g. "returned SKIP sentinel",
                 "dependency 'X' failed").
+        """
+
+    def on_validation_start(self, step: Step, phase: str, attempt: int) -> None:
+        """Called just before a contract validation runs on a step.
+
+        Args:
+            step: The step whose contract is being validated.
+            phase: Either "input" (before action) or "output" (after action).
+            attempt: 1-based attempt number for this validation.
+        """
+
+    def on_validation_complete(self, step: Step, phase: str, result: ValidationResult) -> None:
+        """Called after a contract validation passes (valid=True).
+
+        Not called for invalid results — use on_validation_fail for those.
+
+        Args:
+            step: The step whose contract was validated.
+            phase: Either "input" or "output".
+            result: The passing ValidationResult.
+        """
+
+    def on_validation_fail(
+        self, step: Step, phase: str, result: ValidationResult, attempt: int
+    ) -> None:
+        """Called after a contract validation fails (valid=False).
+
+        Args:
+            step: The step whose contract failed.
+            phase: Either "input" or "output".
+            result: The failing ValidationResult.
+            attempt: 1-based attempt number for this validation.
         """
 
     def on_workflow_start(self, graph: TaskGraph) -> None:
@@ -208,19 +245,19 @@ class WorkflowResult:
 
         raw_status = data["status"]
         if not isinstance(raw_status, str):
-            raise ValueError(
+            raise ConfigError(
                 f"WorkflowResult.from_dict: 'status' must be a str, got {type(raw_status)}"
             )
 
         raw_duration = data["duration_ms"]
         if not isinstance(raw_duration, (int, float)):
-            raise ValueError(
+            raise ConfigError(
                 f"WorkflowResult.from_dict: 'duration_ms' must be numeric, got {type(raw_duration)}"
             )
 
         raw_llm_calls = data["llm_calls"]
         if not isinstance(raw_llm_calls, (int, float)):
-            raise ValueError(
+            raise ConfigError(
                 f"WorkflowResult.from_dict: 'llm_calls' must be numeric, got {type(raw_llm_calls)}"
             )
 
@@ -256,6 +293,10 @@ class StepExecutor:
         hooks: Optional list of ExecutorHooks subscribers. Each receives all events.
         max_llm_calls: Hard limit on total LLM invocations. ExecutionError is
             raised when the limit is reached. Default: 50.
+        validator: Optional StructuralValidator for input/output contract validation.
+            When None, all contract validation is skipped even if steps declare contracts.
+        failure_router: Optional FailureRouter for failure policy resolution.
+            When None, the executor falls back to StepConfig.retries (Module 7 behavior).
     """
 
     def __init__(
@@ -263,11 +304,15 @@ class StepExecutor:
         state: StateStore,
         hooks: list[ExecutorHooks] | None = None,
         max_llm_calls: int = 50,
+        validator: StructuralValidator | None = None,
+        failure_router: FailureRouter | None = None,
     ) -> None:
         self._state = state
         self._hooks: list[ExecutorHooks] = hooks or []
         self._max_llm_calls = max_llm_calls
         self._llm_call_count: int = 0
+        self._validator = validator
+        self._failure_router = failure_router
 
     # ------------------------------------------------------------------
     # Public API
@@ -395,14 +440,18 @@ class StepExecutor:
     ) -> StepResult:
         """Execute a step with up to config.retries retry attempts.
 
+        When a failure_router is wired in, max_attempts is derived from the
+        resolved policy (policy.max_retries + 1) instead of StepConfig.retries.
+        When no router is present, behaviour is identical to Module 7.
+
         This is the core retry loop. It:
         1. Fires on_step_start at the beginning of each attempt.
-        2. Invokes the step action with a fresh StepContext.
-        3. On success: stores output, fires on_step_complete, returns.
-        4. On failure: records the attempt, fires on_step_fail.
-        5. After the last attempt fails: marks FAILED_FINAL, returns.
-        6. Between retries: sleeps with jitter, fires on_step_retry, then
-           on_step_start for the next attempt.
+        2. Optionally validates inputs against step.input_contract.
+        3. Invokes the step action with a fresh StepContext.
+        4. On success: optionally validates output against step.output_contract.
+        5. On validation/execution failure: routes via failure_router or falls
+           back to StepConfig-based retry logic.
+        6. Between retries: sleeps with jitter, fires on_step_retry.
 
         Args:
             step: The step to execute.
@@ -412,7 +461,18 @@ class StepExecutor:
         Returns:
             A StepResult with COMPLETED, SKIPPED, or FAILED_FINAL status.
         """
-        max_attempts = step.config.retries + 1
+        # --- Determine max_attempts from router policy or StepConfig ---
+        if self._failure_router is not None:
+            from kairos.failure import FailurePolicy  # noqa: PLC0415
+
+            step_policy = (
+                step.failure_policy if isinstance(step.failure_policy, FailurePolicy) else None
+            )
+            effective_policy = self._failure_router.resolve_policy(step_policy)
+            max_attempts = effective_policy.max_retries + 1
+        else:
+            max_attempts = step.config.retries + 1
+
         attempts: list[AttemptRecord] = []
         retry_context: dict[str, object] | None = None
         step_start_timestamp = datetime.now(tz=UTC)
@@ -425,6 +485,32 @@ class StepExecutor:
             self._emit_hook("on_step_start", step, attempt_num)
 
             ctx = self._build_context(step, attempt_num, item, retry_context)
+
+            # --- Input validation (before action) ---
+            if step.input_contract is not None:
+                input_result = self._validate_contract(
+                    ctx.inputs, step.input_contract, step, "input", attempt_num
+                )
+                if input_result is not None and not input_result.valid:
+                    # Input contract failed — route or retry
+                    dispatch = self._dispatch_validation_failure(
+                        step,
+                        input_result,
+                        attempt_num,
+                        max_attempts,
+                        step_start_mono,
+                        step_start_timestamp,
+                        attempts,
+                    )
+                    if isinstance(dispatch, StepResult):
+                        return dispatch
+                    # dispatch is a (retry_context, continue) signal
+                    retry_context = dispatch
+                    delay = self._calculate_retry_delay(step.config, attempt=attempt_num)
+                    if delay > 0:
+                        time.sleep(delay)
+                    self._emit_hook("on_step_retry", step, attempt_num + 1)
+                    continue
 
             try:
                 output = self._invoke_action(step, ctx)
@@ -449,24 +535,35 @@ class StepExecutor:
                 attempts.append(attempt_record)
                 self._emit_hook("on_step_fail", step, exc, attempt_num)
 
-                if attempt_num < max_attempts:
-                    # Prepare sanitized retry context for the next attempt
+                if self._failure_router is not None:
+                    # Route via failure router
+                    result_or_ctx = self._handle_failure(
+                        step, FailureType.EXECUTION, exc, attempt_num
+                    )
+                    if isinstance(result_or_ctx, StepResult):
+                        return result_or_ctx
+                    # RETRY: result_or_ctx is the retry_context dict
+                    retry_context = result_or_ctx
+                    delay = self._calculate_retry_delay(step.config, attempt=attempt_num)
+                    if delay > 0:
+                        time.sleep(delay)
+                    self._emit_hook("on_step_retry", step, attempt_num + 1)
+                elif attempt_num < max_attempts:
+                    # No router — fallback to StepConfig retry behavior
                     retry_context = sanitize_retry_context(
                         step_output=None,
                         exception=exc,
                         attempt=attempt_num,
                         failure_type="execution",
                     )
-                    # Calculate and sleep the retry delay
                     delay = self._calculate_retry_delay(step.config, attempt=attempt_num)
                     if delay > 0:
                         time.sleep(delay)
-                    # Fire on_step_retry BEFORE the next attempt
                     self._emit_hook("on_step_retry", step, attempt_num + 1)
                 else:
-                    # All attempts exhausted
+                    # All attempts exhausted (no router path)
                     total_duration_ms = (time.monotonic() - step_start_mono) * 1000.0
-                    step_result = StepResult(
+                    return StepResult(
                         step_id=step.name,
                         status=StepStatus.FAILED_FINAL,
                         output=None,
@@ -474,12 +571,11 @@ class StepExecutor:
                         duration_ms=total_duration_ms,
                         timestamp=step_start_timestamp,
                     )
-                    return step_result
             else:
-                # --- Successful attempt ---
+                # --- Successful action invocation ---
                 attempt_duration_ms = (time.monotonic() - attempt_start_mono) * 1000.0
 
-                # Handle SKIP sentinel
+                # Handle SKIP sentinel — bypass output validation
                 if output is SKIP:
                     total_duration_ms = (time.monotonic() - step_start_mono) * 1000.0
                     attempt_record = AttemptRecord(
@@ -492,7 +588,6 @@ class StepExecutor:
                         timestamp=attempt_timestamp,
                     )
                     attempts.append(attempt_record)
-                    # Store None in state under the step's name
                     self._state.set(step.name, None)
                     step_result = StepResult(
                         step_id=step.name,
@@ -505,7 +600,43 @@ class StepExecutor:
                     self._emit_hook("on_step_skip", step, "returned SKIP sentinel")
                     return step_result
 
-                # Normal success — store output in state
+                # --- Output validation ---
+                if step.output_contract is not None:
+                    output_result = self._validate_contract(
+                        output, step.output_contract, step, "output", attempt_num
+                    )
+                    if output_result is not None and not output_result.valid:
+                        # Record a failed attempt
+                        attempt_record = AttemptRecord(
+                            attempt_number=attempt_num,
+                            status=AttemptStatus.FAILURE,
+                            output=None,
+                            error_type="ValidationError",
+                            error_message="Output contract validation failed.",
+                            duration_ms=attempt_duration_ms,
+                            timestamp=attempt_timestamp,
+                        )
+                        attempts.append(attempt_record)
+
+                        dispatch = self._dispatch_validation_failure(
+                            step,
+                            output_result,
+                            attempt_num,
+                            max_attempts,
+                            step_start_mono,
+                            step_start_timestamp,
+                            attempts,
+                        )
+                        if isinstance(dispatch, StepResult):
+                            return dispatch
+                        retry_context = dispatch
+                        delay = self._calculate_retry_delay(step.config, attempt=attempt_num)
+                        if delay > 0:
+                            time.sleep(delay)
+                        self._emit_hook("on_step_retry", step, attempt_num + 1)
+                        continue
+
+                # --- Normal success — store output and complete ---
                 # For foreach sub-invocations, storage is handled by _execute_foreach
                 if item_index is None:
                     self._state.set(step.name, output)
@@ -533,8 +664,78 @@ class StepExecutor:
                 self._emit_hook("on_step_complete", step, step_result)
                 return step_result
 
-        # Unreachable — loop always returns, but required for type checker
-        raise RuntimeError("Unreachable: retry loop exited without returning")  # pragma: no cover
+        # All router-driven or StepConfig-driven attempts exhausted without returning.
+        # This can happen when the router always returns RETRY but max_attempts is reached.
+        total_duration_ms = (time.monotonic() - step_start_mono) * 1000.0
+        return StepResult(
+            step_id=step.name,
+            status=StepStatus.FAILED_FINAL,
+            output=None,
+            attempts=attempts,
+            duration_ms=total_duration_ms,
+            timestamp=step_start_timestamp,
+        )
+
+    def _dispatch_validation_failure(
+        self,
+        step: Step,
+        validation_result: ValidationResult,
+        attempt_num: int,
+        max_attempts: int,
+        step_start_mono: float,
+        step_start_timestamp: datetime,
+        attempts: list[AttemptRecord],
+    ) -> StepResult | dict[str, object]:
+        """Dispatch a validation failure via router or fallback retry logic.
+
+        Used by both input and output validation failure paths. When a failure
+        router is wired in, delegates to _handle_failure. When no router, applies
+        StepConfig-based retry/exhaustion logic.
+
+        Args:
+            step: The step whose contract failed.
+            validation_result: The failing ValidationResult.
+            attempt_num: The current 1-based attempt number.
+            max_attempts: Maximum attempts for this step.
+            step_start_mono: Monotonic time at step start (for duration calc).
+            step_start_timestamp: UTC datetime at step start.
+            attempts: Running list of AttemptRecords for this step.
+
+        Returns:
+            A StepResult when the action is terminal, or a dict (retry_context)
+            when the caller should retry.
+        """
+        if self._failure_router is not None:
+            result_or_ctx = self._handle_failure(
+                step, FailureType.VALIDATION, validation_result, attempt_num
+            )
+            return result_or_ctx
+
+        # No router — use StepConfig-based retry/exhaustion
+        if attempt_num < max_attempts:
+            # Retry: build sanitized context from validation result
+            validation_errors = [
+                {"field": e.field, "expected": e.expected, "actual": e.actual}
+                for e in validation_result.errors
+            ]
+            return sanitize_retry_context(
+                step_output=None,
+                exception=None,
+                attempt=attempt_num,
+                failure_type="validation",
+                validation_errors=validation_errors,
+            )
+
+        # Exhausted — produce terminal failure
+        total_duration_ms = (time.monotonic() - step_start_mono) * 1000.0
+        return StepResult(
+            step_id=step.name,
+            status=StepStatus.FAILED_FINAL,
+            output=None,
+            attempts=attempts,
+            duration_ms=total_duration_ms,
+            timestamp=step_start_timestamp,
+        )
 
     def _execute_foreach(self, step: Step) -> StepResult:
         """Fan out a foreach step over a collection from state.
@@ -870,6 +1071,143 @@ class StepExecutor:
                     "Hook %r raised an exception in %s; ignoring.",
                     type(hook).__name__,
                     method_name,
+                )
+
+    def _validate_contract(
+        self,
+        data: object,
+        contract: object,
+        step: Step,
+        phase: str,
+        attempt: int,
+    ) -> ValidationResult | None:
+        """Validate *data* against *contract* if validator and contract are configured.
+
+        Emits on_validation_start before, on_validation_complete on pass, and
+        on_validation_fail on failure. Validator crashes produce a failed
+        ValidationResult (they are never allowed to propagate).
+
+        Args:
+            data: The data to validate (step inputs or output).
+            contract: The contract to validate against. Must be a Schema instance;
+                other types are silently skipped (returns None).
+            step: The step being validated (for hook emission).
+            phase: "input" or "output" — used in hooks and logging.
+            attempt: 1-based attempt number for hook emission.
+
+        Returns:
+            A ValidationResult if validation ran, or None if it was skipped
+            (no validator, no contract, or non-Schema contract type).
+        """
+        if self._validator is None or contract is None:
+            return None
+
+        # Local import to avoid circular dependency at module load time.
+        from kairos.schema import Schema  # noqa: PLC0415
+
+        if not isinstance(contract, Schema):
+            return None
+
+        self._emit_hook("on_validation_start", step, phase, attempt)
+
+        try:
+            result = self._validator.validate(data, contract)
+        except Exception as exc:  # noqa: BLE001
+            # SECURITY: validator must never crash the executor.
+            # Produce a sanitized failure result — never re-raise.
+            error_type, _ = sanitize_exception(exc)
+            from kairos.enums import Severity  # noqa: PLC0415
+            from kairos.schema import FieldValidationError  # noqa: PLC0415
+
+            result = ValidationResult(
+                valid=False,
+                errors=[
+                    FieldValidationError(
+                        field="<internal>",
+                        expected="no validator error",
+                        actual=f"{error_type} raised",
+                        message=f"Validator raised {error_type}.",
+                        severity=Severity.ERROR,
+                    )
+                ],
+            )
+
+        if result.valid:
+            self._emit_hook("on_validation_complete", step, phase, result)
+        else:
+            self._emit_hook("on_validation_fail", step, phase, result, attempt)
+
+        return result
+
+    def _handle_failure(
+        self,
+        step: Step,
+        failure_type: FailureType,
+        error: Exception | ValidationResult,
+        attempt_num: int,
+    ) -> StepResult | dict[str, object]:
+        """Route a failure event through the failure router and dispatch the action.
+
+        Translates the router's RecoveryDecision into either a terminal StepResult
+        (for ABORT / SKIP / REPLAN / CUSTOM) or a retry_context dict (for RETRY).
+
+        Args:
+            step: The step that failed.
+            failure_type: EXECUTION or VALIDATION.
+            error: The exception or ValidationResult that caused the failure.
+            attempt_num: 1-based attempt number that failed.
+
+        Returns:
+            A StepResult when the action is terminal (ABORT/SKIP/REPLAN/CUSTOM),
+            or a dict (the retry_context) when the action is RETRY.
+        """
+        from kairos.failure import FailureEvent, FailurePolicy  # noqa: PLC0415
+
+        now = datetime.now(tz=UTC)
+        event = FailureEvent(
+            step_id=step.name,
+            failure_type=failure_type,
+            error=error,
+            attempt_number=attempt_num,
+            timestamp=now,
+        )
+
+        step_policy = (
+            step.failure_policy if isinstance(step.failure_policy, FailurePolicy) else None
+        )
+
+        from kairos.enums import FailureAction  # noqa: PLC0415
+
+        assert self._failure_router is not None
+        decision = self._failure_router.handle(event, step_policy=step_policy)
+
+        match decision.action:
+            case FailureAction.RETRY:
+                # Return the retry context dict — caller continues the loop
+                return decision.retry_context or {}
+
+            case FailureAction.SKIP:
+                self._emit_hook("on_step_skip", step, f"failure router: {decision.reason}")
+                now_skip = datetime.now(tz=UTC)
+                return StepResult(
+                    step_id=step.name,
+                    status=StepStatus.SKIPPED,
+                    output=None,
+                    attempts=[],
+                    duration_ms=0.0,
+                    timestamp=now_skip,
+                )
+
+            case _:
+                # ABORT, REPLAN, CUSTOM — all are terminal in MVP
+                now_fail = datetime.now(tz=UTC)
+                return StepResult(
+                    step_id=step.name,
+                    status=StepStatus.FAILED_FINAL,
+                    output=None,
+                    attempts=[],
+                    duration_ms=0.0,
+                    timestamp=now_fail,
                 )
 
     @staticmethod
