@@ -49,7 +49,7 @@ from kairos.step import StepContext
 # module loads cleanly. Instantiation raises ConfigError if it is None.
 # The alias 'openai_sdk' avoids shadowing the package name in this file.
 try:
-    import openai as openai_sdk  # type: ignore[import-not-found]
+    import openai as openai_sdk  # type: ignore[import-not-found,unused-ignore]
 except ImportError:
     openai_sdk = None  # type: ignore[assignment,unused-ignore]
 
@@ -308,6 +308,19 @@ def openai_adapter(
             format_dict["item"] = ctx.item
 
         prompt = prompt_template.format_map(format_dict)
+
+        # Smart retry: append sanitized context so the LLM can self-correct.
+        # ctx.retry_context is already sanitized by sanitize_retry_context() —
+        # it contains only structured metadata (guidance text, attempt number),
+        # never raw output, raw exceptions, or credentials.
+        if ctx.retry_context:
+            retry_info = "\n\n[RETRY CONTEXT] Your previous response was rejected. "
+            if "guidance" in ctx.retry_context:
+                retry_info += str(ctx.retry_context["guidance"])
+            if "attempt" in ctx.retry_context:
+                retry_info += f" (Attempt {ctx.retry_context['attempt']})"
+            prompt += retry_info
+
         response = adapter.call(prompt)
         return response.to_dict()
 
