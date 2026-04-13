@@ -30,7 +30,7 @@ from datetime import datetime
 # so that the type checker resolves them without executing the import at
 # module load time. The TYPE_CHECKING block makes the import available
 # to mypy and IDEs without creating a runtime dependency cycle.
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, cast
 
 from kairos.enums import AttemptStatus, ForeachPolicy, StepStatus
 from kairos.exceptions import ConfigError
@@ -342,10 +342,10 @@ class StepResult:
             raise ConfigError("StepResult.from_dict: 'attempts' must be a list.")
 
         attempts: list[AttemptRecord] = []
-        for entry in raw_attempts:
+        for entry in cast(list[Any], raw_attempts):  # type: ignore[redundant-cast]
             if not isinstance(entry, dict):
                 raise ConfigError("StepResult.from_dict: each attempt entry must be a dict.")
-            attempts.append(AttemptRecord.from_dict(entry))
+            attempts.append(AttemptRecord.from_dict(cast(dict[str, object], entry)))
 
         return cls(
             step_id=str(step_id),
@@ -440,7 +440,7 @@ class Step:
         **kwargs: object,
     ) -> None:
         # --- Validate name ---
-        if not isinstance(name, str) or not name.strip():
+        if not name or not name.strip():
             raise ConfigError(f"Step name must be a non-empty string, got {name!r}.")
         if not _VALID_STEP_NAME_RE.match(name):
             raise ConfigError(

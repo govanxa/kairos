@@ -7,7 +7,7 @@ import types
 import typing
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any, get_args, get_origin
+from typing import Any, cast, get_args, get_origin
 
 from kairos.enums import Severity
 from kairos.exceptions import ConfigError
@@ -55,7 +55,7 @@ class FieldDefinition:
     name: str
     field_type: type | str  # 'list' | 'nested' | 'optional_<X>' or a primitive type
     required: bool
-    validators: list[Callable[..., Any]] = field(default_factory=list)
+    validators: list[Callable[..., Any]] = field(default_factory=lambda: [])
     item_type: type | None = None  # primitive type for list[T]
     nested_schema: Schema | None = None  # Schema for nested / list[Schema]
 
@@ -113,8 +113,8 @@ class ValidationResult:
     """
 
     valid: bool
-    errors: list[FieldValidationError] = field(default_factory=list)
-    metadata: dict[str, object] = field(default_factory=dict)
+    errors: list[FieldValidationError] = field(default_factory=lambda: [])
+    metadata: dict[str, object] = field(default_factory=lambda: {})
 
 
 # ---------------------------------------------------------------------------
@@ -306,7 +306,7 @@ def _check_circular(schema: Schema, seen: set[int], depth: int = 0) -> None:
             "Schema cannot reference itself directly or indirectly."
         )
     new_seen = seen | {schema_id}
-    for fd in schema._field_defs:
+    for fd in schema.field_definitions:
         if fd.nested_schema is not None:
             _check_circular(fd.nested_schema, new_seen, depth + 1)
 
@@ -388,6 +388,21 @@ class Schema:
     # Validation
     # ------------------------------------------------------------------
 
+    def validate_dict(self, data: Any, prefix: str = "") -> ValidationResult:
+        """Validate data against this schema, returning errors with a path prefix.
+
+        This is a public variant of ``_validate_dict`` used when callers need to
+        embed nested-schema errors into a parent path (e.g. ``"address.street"``).
+
+        Args:
+            data: The value to validate. Must be a dict to be valid.
+            prefix: Dot-separated prefix prepended to all error field paths.
+
+        Returns:
+            ValidationResult with scoped error paths.
+        """
+        return self._validate_dict(data, prefix=prefix)
+
     def validate(self, data: Any) -> ValidationResult:
         """Validate data against this schema.
 
@@ -445,10 +460,11 @@ class Schema:
             )
 
         errors: list[FieldValidationError] = []
+        data_dict: dict[str, Any] = cast(dict[str, Any], data)
 
         for fd in self._field_defs:
             path = f"{prefix}{fd.name}"
-            present = fd.name in data
+            present = fd.name in data_dict
 
             # ----------------------------------------------------------
             # Missing required field
@@ -467,7 +483,7 @@ class Schema:
                 # Optional and absent — fine, skip
                 continue
 
-            value = data[fd.name]
+            value: Any = data_dict[fd.name]
 
             # ----------------------------------------------------------
             # Optional field present as None — valid
@@ -536,21 +552,23 @@ class Schema:
             )
         if not isinstance(spec, dict):
             raise ConfigError(f"from_json_schema requires a dict, got {type(spec).__name__}.")
-        schema_type = spec.get("type")
+        spec_typed = cast(dict[str, Any], spec)
+        schema_type: Any = spec_typed.get("type")
         if schema_type != "object":
             raise ConfigError(
                 f"from_json_schema requires a JSON Schema object (type='object'), "
                 f"got type={schema_type!r}."
             )
 
-        properties: dict[str, Any] = spec.get("properties") or {}
-        required_names: list[str] = spec.get("required") or []
+        properties: dict[str, Any] = cast(dict[str, Any], spec_typed.get("properties") or {})
+        required_names: list[str] = cast(list[str], spec_typed.get("required") or [])
 
         fields_dict: dict[str, Any] = {}
         for prop_name, prop_spec in properties.items():
             if not isinstance(prop_spec, dict):
                 continue
-            annotation = _json_schema_prop_to_annotation(prop_spec, prop_name, _depth + 1)
+            prop_spec_typed = cast(dict[str, Any], prop_spec)
+            annotation = _json_schema_prop_to_annotation(prop_spec_typed, prop_name, _depth + 1)
             # Apply optional wrapping if not in required list
             if prop_name not in required_names:
                 annotation = _make_optional(annotation, nested_required=False)
@@ -576,8 +594,8 @@ class Schema:
             ConfigError: If pydantic is not installed or model is not a BaseModel subclass.
         """
         try:
-            import pydantic  # type: ignore[import-not-found]  # noqa: PLC0415, F401
-            from pydantic import BaseModel  # noqa: PLC0415
+            import pydantic  # type: ignore[import-not-found]  # noqa: PLC0415,F401,I001
+            from pydantic import BaseModel  # type: ignore[import-not-found,unused-ignore]  # noqa: PLC0415,E501,I001
         except ImportError as exc:
             raise ConfigError(
                 "pydantic is required for Schema.from_pydantic(). "
@@ -646,7 +664,7 @@ class Schema:
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, Schema):
             return NotImplemented
-        return self._field_defs == other._field_defs
+        return self._field_defs == other.field_definitions
 
 
 # ---------------------------------------------------------------------------
@@ -780,7 +798,7 @@ def _validate_value(
     # Nested schema
     # ------------------------------------------------------------------
     if field_type == "nested" and fd.nested_schema is not None:
-        sub_result = fd.nested_schema._validate_dict(value, prefix=f"{path}.")
+        sub_result = fd.nested_schema.validate_dict(value, prefix=f"{path}.")
         errors.extend(sub_result.errors)
         return errors
 
@@ -801,11 +819,11 @@ def _validate_value(
             return errors
 
         # Validate each item
-        for idx, item in enumerate(value):
+        for idx, item in enumerate(cast(list[Any], value)):  # type: ignore[redundant-cast]
             item_path = f"{path}[{idx}]"
             if fd.nested_schema is not None:
                 # list[Schema]
-                sub_result = fd.nested_schema._validate_dict(item, prefix=f"{item_path}.")
+                sub_result = fd.nested_schema.validate_dict(item, prefix=f"{item_path}.")
                 errors.extend(sub_result.errors)
             elif fd.item_type is not None:
                 # list[primitive]
@@ -1015,7 +1033,7 @@ def _json_schema_prop_to_annotation(prop_spec: dict[str, Any], name: str, _depth
 
     # Nullable type: {"type": ["string", "null"]}
     if isinstance(json_type, list):
-        non_null = [t for t in json_type if t != "null"]
+        non_null: list[Any] = [t for t in cast(list[Any], json_type) if t != "null"]  # type: ignore[redundant-cast]
         if len(non_null) == 1 and non_null[0] in _JSON_TO_TYPE:
             return _make_union_with_none(_JSON_TO_TYPE[non_null[0]])
         # Fallback to str for unrecognised nullable combos
@@ -1034,14 +1052,17 @@ def _json_schema_prop_to_annotation(prop_spec: dict[str, Any], name: str, _depth
     if json_type == "array":
         items_spec = prop_spec.get("items")
         if isinstance(items_spec, dict):
-            item_json_type = items_spec.get("type")
+            items_spec_typed: dict[str, Any] = cast(dict[str, Any], items_spec)
+            item_json_type: Any = items_spec_typed.get("type")
             if item_json_type == "object":
                 nested_item = Schema.from_json_schema(
                     {
                         "type": "object",
-                        "properties": items_spec.get("properties") or {},
+                        "properties": items_spec_typed.get("properties") or {},
                         **(
-                            {"required": items_spec["required"]} if "required" in items_spec else {}
+                            {"required": items_spec_typed["required"]}
+                            if "required" in items_spec_typed
+                            else {}
                         ),
                     },
                     _depth=_depth,
@@ -1188,7 +1209,7 @@ def _pydantic_annotation_to_kairos(annotation: Any, name: str) -> Any:
 
     # Resolve imports lazily to avoid hard dependency at module load
     try:
-        from pydantic import BaseModel  # noqa: PLC0415
+        from pydantic import BaseModel  # type: ignore[import-not-found,unused-ignore]  # noqa: PLC0415,E501,I001
     except ImportError:
         return str
 
@@ -1200,7 +1221,7 @@ def _pydantic_annotation_to_kairos(annotation: Any, name: str) -> Any:
     origin = get_origin(annotation)
     if isinstance(annotation, types.UnionType) or origin is typing.Union:
         args = get_args(annotation)
-        non_none = [a for a in args if a is not type(None)]
+        non_none: list[Any] = [a for a in args if a is not type(None)]
         if len(non_none) == 1:
             inner = _pydantic_annotation_to_kairos(non_none[0], name)
             return _make_optional(inner)
