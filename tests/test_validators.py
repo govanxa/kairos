@@ -232,6 +232,7 @@ class TestCustomFailurePaths:
 
         validator = v.custom(bad_fn)
         result = validator("trigger")
+        assert isinstance(result, str)
         assert "INJECT THIS" not in result
         assert "ignore previous instructions" not in result
 
