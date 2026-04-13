@@ -547,7 +547,10 @@ class TestPathSecurity:
         """
         result = sanitize_path("../../../etc/shadow", base_dir=str(tmp_path))
         assert ".." not in result
-        assert "/" not in result
+        # The filename portion must not contain path separators
+        filename = os.path.basename(result)
+        assert "/" not in filename
+        assert "\\" not in filename
         # Must stay inside tmp_path
         assert str(tmp_path) in result
 
