@@ -1,5 +1,8 @@
 # Kairos
 
+[![Python](https://img.shields.io/badge/python-3.11%2B-blue)](https://github.com/govanxa/kairos)
+[![License](https://img.shields.io/badge/license-Apache%202.0-green)](https://github.com/govanxa/kairos/blob/main/LICENSE)
+
 > *The right action, at the right time.*
 
 **Security-hardened, model-agnostic Python SDK for contract-enforced AI workflows with automatic recovery.**
@@ -14,20 +17,43 @@ Without Kairos, agents silently pass broken outputs between steps, lose context 
 
 ---
 
-## Why Kairos?
+## Installation
 
-Orchestration tools exist (LangGraph, CrewAI). Validation tools exist (Guardrails AI, PydanticAI). None combine both with security as architecture:
+```bash
+pip install kairos-sdk
+```
 
-| What you need | LangGraph | CrewAI | Guardrails AI | **Kairos** |
-|---|:---:|:---:|:---:|:---:|
-| Multi-step workflow orchestration | Yes | Yes | No | **Yes** |
-| Inter-step contract validation | No | Partial | No (per-output only) | **Yes** |
-| Sanitized retry context | No | No | N/A | **Yes** |
-| Scoped state access per step | No | No | N/A | **Yes** |
-| Sensitive key redaction | No | No | N/A | **Yes** |
-| Configurable failure policies (retry/skip/abort/re-plan) | Partial | Partial | N/A | **Yes** |
+Optional extras:
+```bash
+pip install kairos-sdk[pydantic]    # Pydantic schema support
+```
 
-**The gap Kairos fills:** Contract-enforced workflow orchestration where security is a first-class architectural concern — not a bolt-on.
+---
+
+## Quick Start
+
+```python
+from kairos import Workflow, Step, StepContext
+
+def greet(ctx: StepContext) -> str:
+    name = ctx.inputs.get("name", "World")
+    return f"Hello, {name}!"
+
+def shout(ctx: StepContext) -> str:
+    greeting = ctx.inputs["greet"]
+    return greeting.upper()
+
+workflow = Workflow(
+    name="hello",
+    steps=[
+        Step(name="greet", action=greet),
+        Step(name="shout", action=shout, depends_on=["greet"]),
+    ],
+)
+
+result = workflow.run({"name": "Kairos"})
+print(result.output)  # "HELLO, KAIROS!"
+```
 
 ---
 
@@ -99,43 +125,20 @@ Kairos doesn't care which LLM powers your steps. Any callable that accepts a `St
 
 ---
 
-## Installation
+## Why Kairos?
 
-```bash
-pip install kairos-sdk
-```
+Orchestration tools exist (LangGraph, CrewAI). Validation tools exist (Guardrails AI, PydanticAI). None combine both with security as architecture:
 
-Optional extras:
-```bash
-pip install kairos-sdk[pydantic]    # Pydantic schema support
-```
+| What you need | LangGraph | CrewAI | Guardrails AI | **Kairos** |
+|---|:---:|:---:|:---:|:---:|
+| Multi-step workflow orchestration | Yes | Yes | No | **Yes** |
+| Inter-step contract validation | No | Partial | No (per-output only) | **Yes** |
+| Sanitized retry context | No | No | N/A | **Yes** |
+| Scoped state access per step | No | No | N/A | **Yes** |
+| Sensitive key redaction | No | No | N/A | **Yes** |
+| Configurable failure policies (retry/skip/abort/re-plan) | Partial | Partial | N/A | **Yes** |
 
----
-
-## Quick Start
-
-```python
-from kairos import Workflow, Step, StepContext
-
-def greet(ctx: StepContext) -> str:
-    name = ctx.inputs.get("name", "World")
-    return f"Hello, {name}!"
-
-def shout(ctx: StepContext) -> str:
-    greeting = ctx.inputs["greet"]
-    return greeting.upper()
-
-workflow = Workflow(
-    name="hello",
-    steps=[
-        Step(name="greet", action=greet),
-        Step(name="shout", action=shout, depends_on=["greet"]),
-    ],
-)
-
-result = workflow.run({"name": "Kairos"})
-print(result.output)  # "HELLO, KAIROS!"
-```
+**The gap Kairos fills:** Contract-enforced workflow orchestration where security is a first-class architectural concern — not a bolt-on.
 
 ---
 
@@ -156,7 +159,33 @@ Kairos is built as a single MVP phase combining the Core Engine and Validation L
 
 ## Status
 
-**Pre-release.** Architecture is complete. Implementation is in progress following TDD.
+**MVP COMPLETE.** All 12 modules implemented and passing. Built with strict TDD (tests before code) and a full agent pipeline (architect, developer, code review, security audit, QA) for every module.
+
+**12 of 12 modules complete**
+
+| Module | Status |
+|---|---|
+| `enums.py` | Done |
+| `exceptions.py` | Done |
+| `security.py` | Done |
+| `state.py` | Done |
+| `step.py` | Done |
+| `plan.py` | Done |
+| `executor.py` | Done |
+| `schema.py` | Done |
+| `validators.py` | Done |
+| `failure.py` | Done |
+| `executor+validation` | Done |
+| `workflow.py` (integration) | Done |
+| Concurrent step execution | Planned (first post-MVP) |
+
+893 tests passing, 97% coverage across 1761 statements in 12 source files.
+
+---
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for how you can help.
 
 ---
 
