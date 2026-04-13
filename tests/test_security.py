@@ -899,3 +899,69 @@ class TestRelativePathStripping:
         _, msg = sanitize_exception(exc)
         assert "./data/" not in msg
         assert "config.json" in msg
+
+
+# ---------------------------------------------------------------------------
+# Group 10: Regex security (CLAUDE.md §Security — requirement 11)
+# ---------------------------------------------------------------------------
+
+
+class TestRegexSecurity:
+    """Security tests for ReDoS protection and regex compilation safety.
+
+    CLAUDE.md security requirement 11: v.pattern() wraps re.match() in a
+    thread pool with validation_timeout applied. Catastrophic backtracking
+    triggers a validation failure, not a hang. Regexes are pre-compiled at
+    schema definition time.
+
+    These complement (do not replace) the TestReDoSSecurity class in
+    test_validators.py — they belong here as the canonical security test module.
+    """
+
+    def test_redos_pattern_times_out(self, monkeypatch: pytest.MonkeyPatch):
+        """Catastrophically backtracking regex times out and returns an error.
+
+        Uses monkeypatching to simulate a blocking regex match without actually
+        running a ReDoS pattern (which cannot be interrupted at the C level).
+        """
+        import time
+        from concurrent.futures import ThreadPoolExecutor
+
+        import kairos.validators as vmod
+        from kairos import validators as v
+
+        original_executor = ThreadPoolExecutor
+
+        class SlowExecutor:
+            """Simulates a ThreadPoolExecutor that takes forever to complete."""
+
+            def __init__(self, *args: object, **kwargs: object) -> None:
+                self._pool = original_executor(*args, **kwargs)  # type: ignore[arg-type]
+
+            def submit(self, fn: object, *args: object) -> object:
+                def slow_fn(*a: object) -> None:
+                    time.sleep(5)
+
+                return self._pool.submit(slow_fn)
+
+            def shutdown(self, wait: bool = True, cancel_futures: bool = False) -> None:
+                self._pool.shutdown(wait=False, cancel_futures=True)
+
+        monkeypatch.setattr(vmod, "ThreadPoolExecutor", SlowExecutor)
+
+        validator = v.pattern(r"^\d+$", timeout=0.05)
+        result = validator("123")
+        assert isinstance(result, str)
+        assert "timed out" in result.lower() or "timeout" in result.lower()
+
+    def test_regex_compilation_error_raised_at_definition(self):
+        """Invalid regex pattern raises ConfigError at definition time, not at validate time.
+
+        Pre-compilation ensures the error surfaces immediately (fail fast) rather
+        than at runtime when actual data is being validated.
+        """
+        from kairos import validators as v
+        from kairos.exceptions import ConfigError
+
+        with pytest.raises(ConfigError, match="[Ii]nvalid regex"):
+            v.pattern(r"[invalid")
