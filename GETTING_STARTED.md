@@ -369,6 +369,133 @@ print("\nDone!")
 
 ---
 
+## 9. Using LLM Adapters
+
+So far, every step has been a plain Python function. In real AI workflows, you call an LLM. Kairos provides **adapters** — thin wrappers that handle SDK setup, credential management, response parsing, and error wrapping for you.
+
+### Install a provider
+
+Adapters are optional dependencies. Install only what you need:
+
+```bash
+pip install kairos-ai[anthropic]    # Claude adapter
+pip install kairos-ai[openai]       # OpenAI adapter
+```
+
+### Set your API key
+
+Adapters read credentials from environment variables — never from code. This is a security requirement (ADR-016).
+
+```bash
+# Linux/Mac
+export ANTHROPIC_API_KEY="sk-ant-your-key-here"
+export OPENAI_API_KEY="sk-your-key-here"
+
+# Windows PowerShell
+$env:ANTHROPIC_API_KEY = "sk-ant-your-key-here"
+$env:OPENAI_API_KEY = "sk-your-key-here"
+```
+
+If you try to pass `api_key` as a parameter, Kairos raises `SecurityError` immediately. This prevents accidental credential exposure in code, logs, or version control.
+
+### Use the factory functions
+
+The `claude()` and `openai_adapter()` functions return step-compatible callables. Use `{placeholder}` syntax to reference data from upstream steps:
+
+```python
+from kairos import Workflow, Step, Schema, FailurePolicy, FailureAction
+from kairos import validators as v
+from kairos.adapters.claude import claude
+from kairos.adapters.openai_adapter import openai_adapter
+
+# Define what the analysis must look like
+analysis_schema = Schema(
+    {"summary": str, "key_points": list},
+    validators={"summary": [v.not_empty()]},
+)
+
+workflow = Workflow(
+    name="llm-pipeline",
+    steps=[
+        # Claude researches the topic
+        Step(
+            name="research",
+            action=claude("Provide a detailed analysis of: {topic}"),
+            output_contract=analysis_schema,
+            failure_policy=FailurePolicy(
+                on_execution_fail=FailureAction.RETRY,
+                max_retries=2,
+            ),
+        ),
+        # OpenAI writes the final report
+        Step(
+            name="report",
+            action=openai_adapter(
+                "Based on this research: {research}\n\nWrite a concise report."
+            ),
+            depends_on=["research"],
+        ),
+    ],
+)
+
+result = workflow.run({"topic": "AI agent security"})
+```
+
+**What happens under the hood:**
+1. `claude("...")` creates a `ClaudeAdapter`, validates credentials, returns a closure
+2. The executor calls that closure with a `StepContext` containing `{topic}` from state
+3. The adapter calls the Anthropic API, normalizes the response into a `ModelResponse`
+4. The closure returns `response.to_dict()` — a JSON-safe dict stored in state
+5. The output contract validates the dict (is `summary` a non-empty string? is `key_points` a list?)
+6. If validation fails, the failure policy retries up to 2 times
+7. The `report` step receives `{research}` (the dict from step 1) in its prompt template
+
+### What the adapter returns
+
+Each adapter call produces a `ModelResponse` with:
+
+```python
+from kairos import ModelResponse, TokenUsage
+
+# response.text       → "The analysis shows..."
+# response.model      → "claude-sonnet-4-20250514"
+# response.usage      → TokenUsage(input_tokens=150, output_tokens=500, ...)
+# response.latency_ms → 1234.5
+# response.metadata   → {"stop_reason": "end_turn"}
+```
+
+The factory functions return `response.to_dict()` automatically, so the step output is always a JSON-safe dict that flows cleanly through state and validation.
+
+### Mix and match providers
+
+Different steps can use different providers in the same workflow:
+
+```python
+Step(name="brainstorm", action=claude("Brainstorm ideas for: {topic}")),
+Step(name="evaluate", action=openai_adapter("Evaluate these ideas: {brainstorm}")),
+Step(name="refine", action=claude("Refine the best idea: {evaluate}")),
+```
+
+### Without adapters
+
+You can always write your own step functions that call any LLM, API, or service. Adapters are convenience, not a requirement:
+
+```python
+import anthropic
+
+def my_custom_step(ctx: StepContext) -> dict:
+    client = anthropic.Anthropic()  # reads ANTHROPIC_API_KEY from env
+    response = client.messages.create(
+        model="claude-sonnet-4-20250514",
+        messages=[{"role": "user", "content": f"Analyze: {ctx.inputs['data']}"}],
+    )
+    return {"result": response.content[0].text}
+
+Step(name="analyze", action=my_custom_step)
+```
+
+---
+
 ## Next Steps
 
 - **Run the examples** in the `examples/` directory to see more patterns
@@ -390,3 +517,7 @@ print("\nDone!")
 | `FailureAction` | `from kairos import FailureAction` | RETRY, ABORT, SKIP |
 | `SKIP` | `from kairos import SKIP` | Return from a step to skip it |
 | `WorkflowStatus` | `from kairos import WorkflowStatus` | COMPLETE, FAILED, RUNNING |
+| `claude` | `from kairos.adapters.claude import claude` | Claude adapter factory |
+| `openai_adapter` | `from kairos.adapters.openai_adapter import openai_adapter` | OpenAI adapter factory |
+| `ModelResponse` | `from kairos import ModelResponse` | Normalized LLM response |
+| `TokenUsage` | `from kairos import TokenUsage` | Token count from LLM call |
