@@ -644,3 +644,89 @@ class TestClaudeFactory:
 
             with pytest.raises(SecurityError):
                 claude("Test prompt", base_url="http://localhost:11434")
+
+    def test_factory_appends_retry_context_to_prompt(self, env_api_key: None) -> None:
+        """When ctx.retry_context is set, the prompt is extended with sanitized RETRY CONTEXT."""
+        mock_ant = _make_mock_anthropic()
+
+        with patch("kairos.adapters.claude.anthropic", mock_ant):
+            from kairos.adapters.claude import claude
+
+            action = claude("Analyze: {data}")
+            state_mock = MagicMock()
+            ctx = StepContext(
+                state=state_mock,
+                inputs={"data": "test input"},
+                retry_context={"guidance": "Fix the format", "attempt": 2},
+            )
+            action(ctx)
+
+        create_mock = mock_ant.Anthropic.return_value.messages.create
+        actual_prompt = create_mock.call_args.kwargs["messages"][0]["content"]
+        assert "[RETRY CONTEXT]" in actual_prompt
+        assert "Fix the format" in actual_prompt
+        assert "Attempt 2" in actual_prompt
+
+    def test_factory_no_retry_context_on_first_attempt(self, env_api_key: None) -> None:
+        """When ctx.retry_context is None, the prompt is unchanged — no RETRY CONTEXT appended."""
+        mock_ant = _make_mock_anthropic()
+
+        with patch("kairos.adapters.claude.anthropic", mock_ant):
+            from kairos.adapters.claude import claude
+
+            action = claude("Analyze: {data}")
+            state_mock = MagicMock()
+            ctx = StepContext(
+                state=state_mock,
+                inputs={"data": "test input"},
+                retry_context=None,
+            )
+            action(ctx)
+
+        create_mock = mock_ant.Anthropic.return_value.messages.create
+        actual_prompt = create_mock.call_args.kwargs["messages"][0]["content"]
+        assert "[RETRY CONTEXT]" not in actual_prompt
+
+    def test_factory_retry_context_with_guidance_only(self, env_api_key: None) -> None:
+        """Retry context with only guidance (no attempt key) still appends the guidance text."""
+        mock_ant = _make_mock_anthropic()
+
+        with patch("kairos.adapters.claude.anthropic", mock_ant):
+            from kairos.adapters.claude import claude
+
+            action = claude("Analyze: {data}")
+            state_mock = MagicMock()
+            ctx = StepContext(
+                state=state_mock,
+                inputs={"data": "test input"},
+                retry_context={"guidance": "Check field types"},
+            )
+            action(ctx)
+
+        create_mock = mock_ant.Anthropic.return_value.messages.create
+        actual_prompt = create_mock.call_args.kwargs["messages"][0]["content"]
+        assert "[RETRY CONTEXT]" in actual_prompt
+        assert "Check field types" in actual_prompt
+        # No "Attempt" suffix when attempt key is absent
+        assert "Attempt" not in actual_prompt
+
+    def test_factory_retry_context_empty_dict(self, env_api_key: None) -> None:
+        """An empty retry_context dict appends the RETRY CONTEXT header but no details."""
+        mock_ant = _make_mock_anthropic()
+
+        with patch("kairos.adapters.claude.anthropic", mock_ant):
+            from kairos.adapters.claude import claude
+
+            action = claude("Analyze: {data}")
+            state_mock = MagicMock()
+            ctx = StepContext(
+                state=state_mock,
+                inputs={"data": "test input"},
+                retry_context={},
+            )
+            action(ctx)
+
+        create_mock = mock_ant.Anthropic.return_value.messages.create
+        actual_prompt = create_mock.call_args.kwargs["messages"][0]["content"]
+        # An empty dict is falsy — should NOT append any RETRY CONTEXT block
+        assert "[RETRY CONTEXT]" not in actual_prompt
