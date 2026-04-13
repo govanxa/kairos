@@ -14,12 +14,13 @@ TDD priority order:
 from __future__ import annotations
 
 import json
+from typing import Any
 
 import pytest
 
 from kairos.enums import ForeachPolicy
 from kairos.exceptions import ConfigError, PlanError
-from kairos.plan import TaskGraph, _noop_action
+from kairos.plan import TaskGraph, _noop_action  # pyright: ignore[reportPrivateUsage]
 from kairos.step import Step, StepConfig
 
 # ---------------------------------------------------------------------------
@@ -215,7 +216,7 @@ class TestFailurePaths:
 
     def test_from_dict_raises_on_invalid_graph(self) -> None:
         """from_dict() raises PlanError when the reconstructed graph has errors."""
-        data = {
+        data: dict[str, Any] = {
             "name": "bad",
             "steps": [
                 {"name": "a", "depends_on": ["nonexistent"], "config": {}},
@@ -404,7 +405,7 @@ class TestBasicBehavior:
 
     def test_metadata_stored_correctly(self) -> None:
         """TaskGraph stores metadata dict as provided."""
-        meta = {"author": "test", "version": 1}
+        meta: dict[str, object] = {"author": "test", "version": 1}
         graph = TaskGraph(name="g", steps=[], metadata=meta)
         assert graph.metadata == meta
 
@@ -426,7 +427,7 @@ class TestSecurity:
 
     def test_from_dict_does_not_reconstruct_actions(self) -> None:
         """Deserialized steps have _noop_action, never original callables."""
-        data = {
+        data: dict[str, Any] = {
             "name": "safe",
             "steps": [{"name": "step1", "depends_on": [], "config": {}}],
         }
@@ -442,7 +443,7 @@ class TestSecurity:
 
     def test_from_dict_ignores_unknown_step_keys(self) -> None:
         """Unknown keys in step dicts are silently ignored (no crash, no eval)."""
-        data = {
+        data: dict[str, Any] = {
             "name": "safe",
             "steps": [
                 {
@@ -460,7 +461,7 @@ class TestSecurity:
 
     def test_from_dict_ignores_unknown_config_keys(self) -> None:
         """Unknown keys in config dicts are silently ignored."""
-        data = {
+        data: dict[str, Any] = {
             "name": "g",
             "steps": [
                 {
@@ -551,7 +552,7 @@ class TestSecurity:
 
     def test_from_dict_with_injected_name_constructs_safely(self) -> None:
         """A name that looks like a path injection is stored as-is (no execution)."""
-        data = {
+        data: dict[str, Any] = {
             "name": "../../etc/passwd",
             "steps": [],
         }
@@ -665,7 +666,7 @@ class TestSerialization:
 
     def test_round_trip_preserves_metadata(self) -> None:
         """from_dict(to_dict()) preserves graph metadata."""
-        meta = {"created_by": "test", "version": 42}
+        meta: dict[str, object] = {"created_by": "test", "version": 42}
         graph = TaskGraph(name="g", steps=[], metadata=meta)
         restored = TaskGraph.from_dict(graph.to_dict())
         assert restored.metadata == meta
@@ -734,19 +735,22 @@ class TestSerialization:
 
     def test_from_dict_raises_when_step_entry_not_dict(self) -> None:
         """from_dict() raises ConfigError when a step list entry is not a dict."""
-        data = {"name": "g", "steps": ["not-a-dict"]}
+        data: dict[str, Any] = {"name": "g", "steps": ["not-a-dict"]}
         with pytest.raises(ConfigError):
             TaskGraph.from_dict(data)
 
     def test_from_dict_raises_when_step_name_not_string(self) -> None:
         """from_dict() raises ConfigError when a step's name field is not a string."""
-        data = {"name": "g", "steps": [{"name": 42, "depends_on": [], "config": {}}]}
+        data: dict[str, Any] = {
+            "name": "g",
+            "steps": [{"name": 42, "depends_on": [], "config": {}}],
+        }
         with pytest.raises(ConfigError):
             TaskGraph.from_dict(data)
 
     def test_from_dict_raises_when_depends_on_not_list(self) -> None:
         """from_dict() raises ConfigError when step's depends_on is not a list."""
-        data = {
+        data: dict[str, Any] = {
             "name": "g",
             "steps": [{"name": "s", "depends_on": "not-a-list", "config": {}}],
         }
@@ -755,7 +759,7 @@ class TestSerialization:
 
     def test_from_dict_ignores_invalid_foreach_policy_value(self) -> None:
         """from_dict() falls back to default ForeachPolicy for unrecognized enum values."""
-        data = {
+        data: dict[str, Any] = {
             "name": "g",
             "steps": [
                 {
