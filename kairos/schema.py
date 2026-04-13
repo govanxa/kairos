@@ -108,10 +108,13 @@ class ValidationResult:
     Attributes:
         valid: True if all checks passed.
         errors: List of field-level errors (empty when valid is True).
+        metadata: Optional dict for validator-specific data (e.g. LLMValidator
+            stores "confidence" and "raw_response" here).
     """
 
     valid: bool
     errors: list[FieldValidationError] = field(default_factory=list)
+    metadata: dict[str, object] = field(default_factory=dict)
 
 
 # ---------------------------------------------------------------------------

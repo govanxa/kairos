@@ -49,6 +49,9 @@ from kairos.state import ScopedStateProxy, StateSnapshot, StateStore
 # Step definitions
 from kairos.step import SKIP, AttemptRecord, Step, StepConfig, StepContext, StepResult
 
+# Validators
+from kairos.validators import CompositeValidator, LLMValidator, StructuralValidator, Validator
+
 __all__ = [
     # Enums (public)
     "AttemptStatus",
@@ -95,4 +98,9 @@ __all__ = [
     "StepConfig",
     "StepContext",
     "StepResult",
+    # Validators
+    "CompositeValidator",
+    "LLMValidator",
+    "StructuralValidator",
+    "Validator",
 ]
