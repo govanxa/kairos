@@ -3,7 +3,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "kairos-sdk"
+name = "kairos-ai"
 version = "0.1.0"
 description = "Security-hardened, model-agnostic Python SDK for contract-enforced AI agent workflows"
 readme = "README.md"
@@ -41,7 +41,7 @@ dev = [
     "ruff>=0.5",
     "pyright>=1.1",
 ]
-all = ["kairos-sdk[pydantic,cli,anthropic,openai]"]
+all = ["kairos-ai[pydantic,cli,anthropic,openai]"]
 
 [project.urls]
 Homepage = "https://github.com/govanxa/kairos"
