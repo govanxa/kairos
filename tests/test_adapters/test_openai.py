@@ -233,6 +233,39 @@ class TestBoundaryConditions:
             adapter = OpenAIAdapter(timeout=30.0)
             assert adapter.timeout == 30.0
 
+    def test_allow_localhost_false_by_default(self, env_api_key: None) -> None:
+        """allow_localhost defaults to False — HTTP on localhost is rejected."""
+        mock_sdk = _make_mock_openai_sdk()
+
+        with patch("kairos.adapters.openai_adapter.openai_sdk", mock_sdk):
+            from kairos.adapters.openai_adapter import OpenAIAdapter
+
+            with pytest.raises(SecurityError):
+                OpenAIAdapter(base_url="http://localhost:8080")
+
+    def test_allow_localhost_true_permits_http_localhost(self, env_api_key: None) -> None:
+        """allow_localhost=True allows HTTP on localhost (for Ollama, LM Studio, etc.)."""
+        mock_sdk = _make_mock_openai_sdk()
+
+        with patch("kairos.adapters.openai_adapter.openai_sdk", mock_sdk):
+            from kairos.adapters.openai_adapter import OpenAIAdapter
+
+            # Should not raise — HTTP localhost is explicitly permitted
+            OpenAIAdapter(base_url="http://localhost:8080", allow_localhost=True)
+
+    def test_allow_localhost_true_still_rejects_http_remote(self, env_api_key: None) -> None:
+        """allow_localhost=True does NOT relax HTTPS for remote hosts."""
+        mock_sdk = _make_mock_openai_sdk()
+
+        with patch("kairos.adapters.openai_adapter.openai_sdk", mock_sdk):
+            from kairos.adapters.openai_adapter import OpenAIAdapter
+
+            with pytest.raises(SecurityError):
+                OpenAIAdapter(
+                    base_url="http://remote-server.example.com/v1",
+                    allow_localhost=True,
+                )
+
 
 # ---------------------------------------------------------------------------
 # Group 3: Happy paths
@@ -580,3 +613,28 @@ class TestOpenAIAdapterFactory:
             action(ctx)
             call_kwargs = mock_sdk.OpenAI.return_value.chat.completions.create.call_args
             assert "gpt-4-turbo" in str(call_kwargs)
+
+    def test_factory_forwards_allow_localhost(self, env_api_key: None) -> None:
+        """openai_adapter() forwards allow_localhost to OpenAIAdapter — enables local model URLs."""
+        mock_sdk = _make_mock_openai_sdk()
+
+        with patch("kairos.adapters.openai_adapter.openai_sdk", mock_sdk):
+            from kairos.adapters.openai_adapter import openai_adapter
+
+            # With allow_localhost=True, HTTP localhost must be accepted
+            action = openai_adapter(
+                "Test prompt",
+                base_url="http://localhost:11434",
+                allow_localhost=True,
+            )
+            assert callable(action)
+
+    def test_factory_allow_localhost_false_rejects_http_localhost(self, env_api_key: None) -> None:
+        """openai_adapter() with allow_localhost=False (default) rejects HTTP localhost URLs."""
+        mock_sdk = _make_mock_openai_sdk()
+
+        with patch("kairos.adapters.openai_adapter.openai_sdk", mock_sdk):
+            from kairos.adapters.openai_adapter import openai_adapter
+
+            with pytest.raises(SecurityError):
+                openai_adapter("Test prompt", base_url="http://localhost:11434")

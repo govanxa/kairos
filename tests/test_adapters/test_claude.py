@@ -227,6 +227,39 @@ class TestBoundaryConditions:
             adapter = ClaudeAdapter(timeout=30.0)
             assert adapter.timeout == 30.0
 
+    def test_allow_localhost_false_by_default(self, env_api_key: None) -> None:
+        """allow_localhost defaults to False — HTTP on localhost is rejected."""
+        mock_ant = _make_mock_anthropic()
+
+        with patch("kairos.adapters.claude.anthropic", mock_ant):
+            from kairos.adapters.claude import ClaudeAdapter
+
+            with pytest.raises(SecurityError):
+                ClaudeAdapter(base_url="http://localhost:8080")
+
+    def test_allow_localhost_true_permits_http_localhost(self, env_api_key: None) -> None:
+        """allow_localhost=True allows HTTP on localhost (for Ollama, LM Studio, etc.)."""
+        mock_ant = _make_mock_anthropic()
+
+        with patch("kairos.adapters.claude.anthropic", mock_ant):
+            from kairos.adapters.claude import ClaudeAdapter
+
+            # Should not raise — HTTP localhost is explicitly permitted
+            ClaudeAdapter(base_url="http://localhost:8080", allow_localhost=True)
+
+    def test_allow_localhost_true_still_rejects_http_remote(self, env_api_key: None) -> None:
+        """allow_localhost=True does NOT relax HTTPS for remote hosts."""
+        mock_ant = _make_mock_anthropic()
+
+        with patch("kairos.adapters.claude.anthropic", mock_ant):
+            from kairos.adapters.claude import ClaudeAdapter
+
+            with pytest.raises(SecurityError):
+                ClaudeAdapter(
+                    base_url="http://remote-server.example.com/v1",
+                    allow_localhost=True,
+                )
+
     def test_timeout_forwarded_to_sdk_client(self, env_api_key: None) -> None:
         """The timeout value must be passed to the anthropic.Anthropic() constructor (FIX 3).
 
@@ -586,3 +619,28 @@ class TestClaudeFactory:
             action(ctx)
             call_kwargs = mock_ant.Anthropic.return_value.messages.create.call_args
             assert "claude-3-opus-20240229" in str(call_kwargs)
+
+    def test_factory_forwards_allow_localhost(self, env_api_key: None) -> None:
+        """claude() forwards allow_localhost to ClaudeAdapter — enables local model URLs."""
+        mock_ant = _make_mock_anthropic()
+
+        with patch("kairos.adapters.claude.anthropic", mock_ant):
+            from kairos.adapters.claude import claude
+
+            # With allow_localhost=True, HTTP localhost must be accepted
+            action = claude(
+                "Test prompt",
+                base_url="http://localhost:11434",
+                allow_localhost=True,
+            )
+            assert callable(action)
+
+    def test_factory_allow_localhost_false_rejects_http_localhost(self, env_api_key: None) -> None:
+        """claude() with allow_localhost=False (default) rejects HTTP localhost URLs."""
+        mock_ant = _make_mock_anthropic()
+
+        with patch("kairos.adapters.claude.anthropic", mock_ant):
+            from kairos.adapters.claude import claude
+
+            with pytest.raises(SecurityError):
+                claude("Test prompt", base_url="http://localhost:11434")
