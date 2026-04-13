@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 import math
 import typing
+from collections.abc import Callable
+from typing import Any
 
 import pytest
 
@@ -132,7 +134,7 @@ class TestFailurePaths:
     def test_from_pydantic_without_pydantic_raises_config_error(self):
         """from_pydantic raises ConfigError if pydantic is not installed."""
         try:
-            import pydantic  # noqa: F401, PLC0415
+            import pydantic  # noqa: F401, PLC0415  # type: ignore[import-not-found,unused-ignore]
 
             pytest.skip("pydantic is installed — skipping unavailability test")
         except ImportError:
@@ -142,7 +144,7 @@ class TestFailurePaths:
     def test_from_pydantic_rejects_non_basemodel(self):
         """from_pydantic raises ConfigError when given a non-BaseModel class."""
         try:
-            import pydantic  # noqa: F401, PLC0415
+            import pydantic  # noqa: F401, PLC0415  # type: ignore[import-not-found,unused-ignore]
         except ImportError:
             pytest.skip("pydantic not installed")
         with pytest.raises(ConfigError, match="BaseModel"):
@@ -387,7 +389,9 @@ class TestBasicBehavior:
     def test_extend_with_validators(self):
         """extend() accepts validators for new fields."""
         base = Schema({"name": str})
-        validators_map = {"email": [lambda v: v]}  # stub validator
+        validators_map: dict[str, list[Callable[[Any], bool]]] = {
+            "email": [lambda v: v],  # stub validator
+        }
         extended = base.extend({"email": str}, validators=validators_map)
         assert "email" in extended.field_names
 
@@ -643,11 +647,11 @@ class TestPydanticIntegration:
     def test_from_pydantic_basic(self):
         """from_pydantic creates Schema from a simple BaseModel."""
         try:
-            from pydantic import BaseModel  # noqa: PLC0415
+            from pydantic import BaseModel  # noqa: PLC0415,E501,I001  # type: ignore[import-not-found,unused-ignore]
         except ImportError:
             pytest.skip("pydantic not installed")
 
-        class User(BaseModel):
+        class User(BaseModel):  # pyright: ignore[reportUntypedBaseClass]
             name: str
             age: int
 
@@ -658,11 +662,11 @@ class TestPydanticIntegration:
     def test_from_pydantic_optional_field(self):
         """from_pydantic handles Optional[str] as non-required field."""
         try:
-            from pydantic import BaseModel  # noqa: PLC0415
+            from pydantic import BaseModel  # noqa: PLC0415,E501,I001  # type: ignore[import-not-found,unused-ignore]
         except ImportError:
             pytest.skip("pydantic not installed")
 
-        class User(BaseModel):
+        class User(BaseModel):  # pyright: ignore[reportUntypedBaseClass]
             name: str
             nickname: str | None = None
 
@@ -672,14 +676,14 @@ class TestPydanticIntegration:
     def test_from_pydantic_nested_model(self):
         """from_pydantic handles nested BaseModel subclasses."""
         try:
-            from pydantic import BaseModel  # noqa: PLC0415
+            from pydantic import BaseModel  # noqa: PLC0415,E501,I001  # type: ignore[import-not-found,unused-ignore]
         except ImportError:
             pytest.skip("pydantic not installed")
 
-        class Address(BaseModel):
+        class Address(BaseModel):  # pyright: ignore[reportUntypedBaseClass]
             city: str
 
-        class Company(BaseModel):
+        class Company(BaseModel):  # pyright: ignore[reportUntypedBaseClass]
             name: str
             hq: Address
 
@@ -690,11 +694,11 @@ class TestPydanticIntegration:
     def test_from_pydantic_validates_correctly(self):
         """Schema from Pydantic model validates data correctly."""
         try:
-            from pydantic import BaseModel  # noqa: PLC0415
+            from pydantic import BaseModel  # noqa: PLC0415,E501,I001  # type: ignore[import-not-found,unused-ignore]
         except ImportError:
             pytest.skip("pydantic not installed")
 
-        class Product(BaseModel):
+        class Product(BaseModel):  # pyright: ignore[reportUntypedBaseClass]
             id: int
             name: str
 
@@ -847,7 +851,7 @@ class TestDepthLimitsAndCircular:
         chain accumulated so far. Once the chain is deeper than _MAX_SCHEMA_DEPTH,
         _check_circular raises ConfigError.
         """
-        from kairos.schema import _MAX_SCHEMA_DEPTH
+        from kairos.schema import _MAX_SCHEMA_DEPTH  # pyright: ignore[reportPrivateUsage]
 
         # Build schemas one level at a time. The ConfigError must be raised somewhere
         # during construction of a schema that pushes depth beyond the limit.
@@ -859,11 +863,11 @@ class TestDepthLimitsAndCircular:
 
     def test_from_json_schema_rejects_excessive_nesting(self):
         """from_json_schema raises ConfigError for JSON Schema with 50+ nested objects."""
-        from kairos.schema import _MAX_SCHEMA_DEPTH
+        from kairos.schema import _MAX_SCHEMA_DEPTH  # pyright: ignore[reportPrivateUsage]
 
         # Build a deeply nested JSON Schema dict programmatically
         depth = _MAX_SCHEMA_DEPTH + 18  # 50 total
-        spec: dict = {"type": "object", "properties": {"leaf": {"type": "string"}}}
+        spec: dict[str, Any] = {"type": "object", "properties": {"leaf": {"type": "string"}}}
         for _ in range(depth):
             spec = {"type": "object", "properties": {"child": spec}}
 
@@ -872,20 +876,23 @@ class TestDepthLimitsAndCircular:
 
     def test_actual_circular_reference_detected(self):
         """Manually injected cycle between two schemas raises ConfigError."""
-        from kairos.schema import FieldDefinition, _check_circular
+        from kairos.schema import (  # pyright: ignore[reportPrivateUsage]
+            FieldDefinition,
+            _check_circular,  # pyright: ignore[reportPrivateUsage]
+        )
 
         schema_a = Schema({"name": str})
         schema_b = Schema({"ref": schema_a})
         # Mutate schema_a's _field_defs to point back at schema_b — creating a cycle:
         #   schema_a -> schema_b -> schema_a -> ...
-        schema_a._field_defs[0] = FieldDefinition(
+        schema_a._field_defs[0] = FieldDefinition(  # pyright: ignore[reportPrivateUsage]
             name="ref",
             field_type="nested",
             required=True,
             nested_schema=schema_b,
         )
         with pytest.raises(ConfigError, match="[Cc]ircular"):
-            _check_circular(schema_a, set())
+            _check_circular(schema_a, set())  # pyright: ignore[reportPrivateUsage]
 
 
 # ---------------------------------------------------------------------------
@@ -978,10 +985,10 @@ class TestCoverageGaps:
 
     def test_normalize_type_depth_guard(self):
         """_normalize_type raises ConfigError when depth exceeds _MAX_SCHEMA_DEPTH."""
-        from kairos.schema import _MAX_SCHEMA_DEPTH, _normalize_type
+        from kairos.schema import _MAX_SCHEMA_DEPTH, _normalize_type  # pyright: ignore[reportPrivateUsage]  # noqa: I001
 
         with pytest.raises(ConfigError, match="nesting depth"):
-            _normalize_type("field", str, [], depth=_MAX_SCHEMA_DEPTH + 1)
+            _normalize_type("field", str, [], depth=_MAX_SCHEMA_DEPTH + 1)  # pyright: ignore[reportPrivateUsage]
 
     # --- list with no type args in parameterized form (line 247) ---
 
@@ -1006,10 +1013,10 @@ class TestCoverageGaps:
         schema = Schema({"name": str})
         # Monkey-patch _validate_dict to raise an unexpected exception
 
-        def exploding_validate(data, prefix=""):  # noqa: ANN001, ANN202, ARG001
+        def exploding_validate(data: object, prefix: str = "") -> list[object]:  # noqa: ARG001
             raise RuntimeError("simulated internal error")
 
-        schema._validate_dict = exploding_validate  # type: ignore[assignment]
+        schema._validate_dict = exploding_validate  # type: ignore[assignment]  # pyright: ignore[reportPrivateUsage]
         result = schema.validate({"name": "Alice"})
         assert isinstance(result, ValidationResult)
         assert result.valid is False
@@ -1061,7 +1068,10 @@ class TestCoverageGaps:
 
     def test_fd_type_label_nested(self):
         """_fd_type_label returns 'Schema' for nested field type."""
-        from kairos.schema import FieldDefinition, _fd_type_label
+        from kairos.schema import (  # pyright: ignore[reportPrivateUsage]
+            FieldDefinition,
+            _fd_type_label,  # pyright: ignore[reportPrivateUsage]
+        )
 
         fd = FieldDefinition(
             name="x",
@@ -1069,11 +1079,14 @@ class TestCoverageGaps:
             required=True,
             nested_schema=Schema({"a": str}),
         )
-        assert _fd_type_label(fd) == "Schema"
+        assert _fd_type_label(fd) == "Schema"  # pyright: ignore[reportPrivateUsage]
 
     def test_fd_type_label_list_schema(self):
         """_fd_type_label returns 'list[Schema]' for list of schema."""
-        from kairos.schema import FieldDefinition, _fd_type_label
+        from kairos.schema import (  # pyright: ignore[reportPrivateUsage]
+            FieldDefinition,
+            _fd_type_label,  # pyright: ignore[reportPrivateUsage]
+        )
 
         fd = FieldDefinition(
             name="x",
@@ -1081,28 +1094,37 @@ class TestCoverageGaps:
             required=True,
             nested_schema=Schema({"a": str}),
         )
-        assert _fd_type_label(fd) == "list[Schema]"
+        assert _fd_type_label(fd) == "list[Schema]"  # pyright: ignore[reportPrivateUsage]
 
     def test_fd_type_label_list_primitive(self):
         """_fd_type_label returns 'list[str]' for list of str."""
-        from kairos.schema import FieldDefinition, _fd_type_label
+        from kairos.schema import (  # pyright: ignore[reportPrivateUsage]
+            FieldDefinition,
+            _fd_type_label,  # pyright: ignore[reportPrivateUsage]
+        )
 
         fd = FieldDefinition(name="x", field_type="list", required=True, item_type=str)
-        assert _fd_type_label(fd) == "list[str]"
+        assert _fd_type_label(fd) == "list[str]"  # pyright: ignore[reportPrivateUsage]
 
     def test_fd_type_label_bare_list(self):
         """_fd_type_label returns 'list' for bare list."""
-        from kairos.schema import FieldDefinition, _fd_type_label
+        from kairos.schema import (  # pyright: ignore[reportPrivateUsage]
+            FieldDefinition,
+            _fd_type_label,  # pyright: ignore[reportPrivateUsage]
+        )
 
         fd = FieldDefinition(name="x", field_type="list", required=True)
-        assert _fd_type_label(fd) == "list"
+        assert _fd_type_label(fd) == "list"  # pyright: ignore[reportPrivateUsage]
 
     def test_fd_type_label_primitive(self):
         """_fd_type_label returns 'int' for int field type."""
-        from kairos.schema import FieldDefinition, _fd_type_label
+        from kairos.schema import (  # pyright: ignore[reportPrivateUsage]
+            FieldDefinition,
+            _fd_type_label,  # pyright: ignore[reportPrivateUsage]
+        )
 
         fd = FieldDefinition(name="x", field_type=int, required=True)
-        assert _fd_type_label(fd) == "int"
+        assert _fd_type_label(fd) == "int"  # pyright: ignore[reportPrivateUsage]
 
     # --- _fd_to_json_schema_prop branches (lines 981-994) ---
 
@@ -1260,29 +1282,38 @@ class TestCoverageGaps:
 
     def test_fd_to_json_schema_prop_fallback(self):
         """_fd_to_json_schema_prop returns {} for unknown field type."""
-        from kairos.schema import FieldDefinition, _fd_to_json_schema_prop
+        from kairos.schema import (  # pyright: ignore[reportPrivateUsage]
+            FieldDefinition,
+            _fd_to_json_schema_prop,  # pyright: ignore[reportPrivateUsage]
+        )
 
         fd = FieldDefinition(name="x", field_type="unknown_type", required=True)
-        result = _fd_to_json_schema_prop(fd)
+        result = _fd_to_json_schema_prop(fd)  # pyright: ignore[reportPrivateUsage]
         assert result == {}
 
     # --- _fd_type_label string fallback (line 959) ---
 
     def test_fd_type_label_string_field_type(self):
         """_fd_type_label returns string representation for non-type field_type."""
-        from kairos.schema import FieldDefinition, _fd_type_label
+        from kairos.schema import (  # pyright: ignore[reportPrivateUsage]
+            FieldDefinition,
+            _fd_type_label,  # pyright: ignore[reportPrivateUsage]
+        )
 
         fd = FieldDefinition(name="x", field_type="custom", required=True)
-        assert _fd_type_label(fd) == "custom"
+        assert _fd_type_label(fd) == "custom"  # pyright: ignore[reportPrivateUsage]
 
     # --- _fd_to_annotation fallback (line 1127) ---
 
     def test_fd_to_annotation_fallback(self):
         """_fd_to_annotation returns str for unknown field_type."""
-        from kairos.schema import FieldDefinition, _fd_to_annotation
+        from kairos.schema import (  # pyright: ignore[reportPrivateUsage]
+            FieldDefinition,
+            _fd_to_annotation,  # pyright: ignore[reportPrivateUsage]
+        )
 
         fd = FieldDefinition(name="x", field_type="unknown", required=True)
-        result = _fd_to_annotation(fd)
+        result = _fd_to_annotation(fd)  # pyright: ignore[reportPrivateUsage]
         assert result is str
 
     # --- extend() combined_validators branch (line 628) ---
@@ -1305,17 +1336,20 @@ class TestCoverageGaps:
 
     def test_validate_value_unknown_field_type_no_crash(self):
         """_validate_value returns empty errors for unknown field_type (fallback)."""
-        from kairos.schema import FieldDefinition, _validate_value
+        from kairos.schema import (  # pyright: ignore[reportPrivateUsage]
+            FieldDefinition,
+            _validate_value,  # pyright: ignore[reportPrivateUsage]
+        )
 
         fd = FieldDefinition(name="x", field_type="unknown_type", required=True)
-        errors = _validate_value("anything", fd, "x")
+        errors = _validate_value("anything", fd, "x")  # pyright: ignore[reportPrivateUsage]
         assert errors == []
 
     # --- float conversion error (lines 900-910) ---
 
     def test_float_conversion_error_handled(self):
         """_check_primitive_type handles values that pass isinstance but fail float()."""
-        from kairos.schema import _check_primitive_type
+        from kairos.schema import _check_primitive_type  # pyright: ignore[reportPrivateUsage]
 
         # Create a custom numeric type that passes isinstance(v, (int, float))
         # but raises on float() conversion
@@ -1323,7 +1357,7 @@ class TestCoverageGaps:
             def __float__(self) -> float:
                 raise ValueError("cannot convert")
 
-        errors = _check_primitive_type(BadFloat(0), float, "score")
+        errors = _check_primitive_type(BadFloat(0), float, "score")  # pyright: ignore[reportPrivateUsage]
         # BadFloat(0) is isinstance float, float(BadFloat(0)) may raise or not
         # depending on Python internals — either way, no crash
         assert isinstance(errors, list)
@@ -1332,34 +1366,34 @@ class TestCoverageGaps:
 
     def test_check_primitive_type_unknown_expected(self):
         """_check_primitive_type returns empty errors for unsupported expected_type."""
-        from kairos.schema import _check_primitive_type
+        from kairos.schema import _check_primitive_type  # pyright: ignore[reportPrivateUsage]
 
         # Use a type not in the checked branches (dict is not str/int/float/bool)
-        errors = _check_primitive_type("value", dict, "field")
+        errors = _check_primitive_type("value", dict, "field")  # pyright: ignore[reportPrivateUsage]
         assert errors == []
 
     # --- _make_optional branches (lines 1078, 1085, 1094) ---
 
     def test_make_optional_already_optional_union(self):
         """_make_optional returns same type for already-optional union."""
-        from kairos.schema import _make_optional
+        from kairos.schema import _make_optional  # pyright: ignore[reportPrivateUsage]
 
         optional_type = str | None
-        result = _make_optional(optional_type)
+        result = _make_optional(optional_type)  # pyright: ignore[reportPrivateUsage]
         # Should return the same type — already optional
         assert result is optional_type
 
     def test_make_optional_typing_union(self):
         """_make_optional returns same type for typing.Union[X, None]."""
-        from kairos.schema import _make_optional
+        from kairos.schema import _make_optional  # pyright: ignore[reportPrivateUsage]
 
         optional_type = typing.Union[str, None]  # noqa: UP007 — intentional
-        result = _make_optional(optional_type)
+        result = _make_optional(optional_type)  # pyright: ignore[reportPrivateUsage]
         assert result is optional_type
 
     def test_make_optional_non_primitive_non_list(self):
         """_make_optional returns annotation as-is for unsupported types."""
-        from kairos.schema import _make_optional
+        from kairos.schema import _make_optional  # pyright: ignore[reportPrivateUsage]
 
-        result = _make_optional(dict)
+        result = _make_optional(dict)  # pyright: ignore[reportPrivateUsage]
         assert result is dict

@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable
+from typing import Any, cast
 
 import pytest
 
@@ -44,11 +45,6 @@ from kairos import (
 def _noop(ctx: StepContext) -> dict[str, object]:
     """Do nothing, return empty dict."""
     return {}
-
-
-def _echo_inputs(ctx: StepContext) -> dict[str, object]:
-    """Return a copy of inputs."""
-    return dict(ctx.inputs)
 
 
 def _store_value(ctx: StepContext) -> dict[str, object]:
@@ -409,7 +405,7 @@ class TestHappyPaths:
 
     def test_metadata_preserved_in_workflow(self) -> None:
         """Metadata passed to Workflow is stored and accessible."""
-        meta = {"author": "test", "version": "1.0"}
+        meta: dict[str, object] = {"author": "test", "version": "1.0"}
         wf = Workflow(name="wf", steps=[Step(name="s", action=_noop)], metadata=meta)
         assert wf.graph.metadata == meta
 
@@ -451,7 +447,7 @@ class TestSecurity:
 
     def test_sensitive_key_accessible_inside_step_via_get(self) -> None:
         """Sensitive keys are accessible inside the step action via state.get()."""
-        retrieved = [None]
+        retrieved: list[object] = [None]
 
         def _write_then_read(ctx: StepContext) -> dict[str, object]:
             ctx.state.set("api_key", "sk-secret-value")
@@ -646,8 +642,9 @@ class TestIntegration:
         step_output = result.step_results["doubler"].output
         # output is a list of per-item result dicts
         assert isinstance(step_output, list)
-        assert len(step_output) == 3
-        doubled_values = [item["doubled"] for item in step_output]  # type: ignore[index]
+        typed_output = cast(list[dict[str, Any]], step_output)
+        assert len(typed_output) == 3
+        doubled_values = [item["doubled"] for item in typed_output]
         assert doubled_values == [20, 40, 60]
 
 

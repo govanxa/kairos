@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 from datetime import UTC, datetime
+from typing import Any, cast
 
 import pytest
 
@@ -28,7 +29,7 @@ from kairos.step import (
     StepConfig,
     StepContext,
     StepResult,
-    _SkipSentinel,
+    _SkipSentinel,  # pyright: ignore[reportPrivateUsage]
 )
 
 # ---------------------------------------------------------------------------
@@ -177,7 +178,7 @@ class TestAttemptRecordFromDictFailurePaths:
     """AttemptRecord.from_dict raises ConfigError for missing/invalid data."""
 
     def test_missing_attempt_number_raises(self) -> None:
-        data = {
+        data: dict[str, object] = {
             "status": "success",
             "output": None,
             "error_type": None,
@@ -189,7 +190,7 @@ class TestAttemptRecordFromDictFailurePaths:
             AttemptRecord.from_dict(data)
 
     def test_missing_status_raises(self) -> None:
-        data = {
+        data: dict[str, object] = {
             "attempt_number": 1,
             "output": None,
             "error_type": None,
@@ -202,7 +203,7 @@ class TestAttemptRecordFromDictFailurePaths:
 
     def test_missing_duration_ms_raises(self) -> None:
         """AttemptRecord.from_dict missing duration_ms must raise ConfigError."""
-        data = {
+        data: dict[str, object] = {
             "attempt_number": 1,
             "status": "success",
             "output": None,
@@ -214,7 +215,7 @@ class TestAttemptRecordFromDictFailurePaths:
             AttemptRecord.from_dict(data)
 
     def test_invalid_status_value_raises(self) -> None:
-        data = {
+        data: dict[str, object] = {
             "attempt_number": 1,
             "status": "not_a_valid_status",
             "output": None,
@@ -227,7 +228,7 @@ class TestAttemptRecordFromDictFailurePaths:
             AttemptRecord.from_dict(data)
 
     def test_invalid_timestamp_raises(self) -> None:
-        data = {
+        data: dict[str, object] = {
             "attempt_number": 1,
             "status": "success",
             "output": None,
@@ -240,7 +241,7 @@ class TestAttemptRecordFromDictFailurePaths:
             AttemptRecord.from_dict(data)
 
     def test_missing_timestamp_raises(self) -> None:
-        data = {
+        data: dict[str, object] = {
             "attempt_number": 1,
             "status": "success",
             "output": None,
@@ -256,7 +257,7 @@ class TestStepResultFromDictFailurePaths:
     """StepResult.from_dict raises ConfigError for missing/invalid data."""
 
     def test_missing_step_id_raises(self) -> None:
-        data = {
+        data: dict[str, Any] = {
             "status": "completed",
             "output": None,
             "attempts": [],
@@ -267,7 +268,7 @@ class TestStepResultFromDictFailurePaths:
             StepResult.from_dict(data)
 
     def test_invalid_step_status_raises(self) -> None:
-        data = {
+        data: dict[str, Any] = {
             "step_id": "s1",
             "status": "not_a_status",
             "output": None,
@@ -280,7 +281,7 @@ class TestStepResultFromDictFailurePaths:
 
     def test_invalid_timestamp_in_step_result_raises(self) -> None:
         """StepResult.from_dict with unparseable timestamp must raise ConfigError."""
-        data = {
+        data: dict[str, Any] = {
             "step_id": "s1",
             "status": "completed",
             "output": None,
@@ -292,7 +293,7 @@ class TestStepResultFromDictFailurePaths:
             StepResult.from_dict(data)
 
     def test_invalid_attempt_in_list_raises(self) -> None:
-        data = {
+        data: dict[str, Any] = {
             "step_id": "s1",
             "status": "completed",
             "output": None,
@@ -305,7 +306,7 @@ class TestStepResultFromDictFailurePaths:
 
     def test_attempts_not_a_list_raises(self) -> None:
         """attempts field as a non-list (e.g., string) must raise ConfigError."""
-        data = {
+        data: dict[str, Any] = {
             "step_id": "s1",
             "status": "completed",
             "output": None,
@@ -318,7 +319,7 @@ class TestStepResultFromDictFailurePaths:
 
     def test_attempt_entry_not_a_dict_raises(self) -> None:
         """Non-dict entry inside attempts list must raise ConfigError."""
-        data = {
+        data: dict[str, Any] = {
             "step_id": "s1",
             "status": "completed",
             "output": None,
@@ -348,7 +349,7 @@ class TestStepConfigBoundaryConditions:
 
     def test_very_small_positive_timeout_is_valid(self) -> None:
         cfg = StepConfig(timeout=0.001)
-        assert cfg.timeout == pytest.approx(0.001)
+        assert cfg.timeout == pytest.approx(0.001)  # pyright: ignore[reportUnknownMemberType]
 
     def test_max_concurrency_one_is_valid(self) -> None:
         cfg = StepConfig(max_concurrency=1)
@@ -433,7 +434,7 @@ class TestAttemptRecordBoundaryConditions:
         assert rec.duration_ms == 0.0
 
     def test_from_dict_ignores_extra_keys(self) -> None:
-        data = {
+        data: dict[str, object] = {
             "attempt_number": 1,
             "status": "success",
             "output": "ok",
@@ -608,7 +609,7 @@ class TestAttemptRecordHappyPaths:
         assert d["output"] is None
         assert d["error_type"] == "ValueError"
         assert d["error_message"] == "bad input"
-        assert d["duration_ms"] == pytest.approx(123.4)
+        assert d["duration_ms"] == pytest.approx(123.4)  # pyright: ignore[reportUnknownMemberType]
         assert d["timestamp"] == "2024-06-15T10:00:00+00:00"
 
     def test_from_dict_round_trip(self) -> None:
@@ -629,7 +630,7 @@ class TestAttemptRecordHappyPaths:
         assert restored.output == original.output
         assert restored.error_type == original.error_type
         assert restored.error_message == original.error_message
-        assert restored.duration_ms == pytest.approx(original.duration_ms)
+        assert restored.duration_ms == pytest.approx(original.duration_ms)  # pyright: ignore[reportUnknownMemberType]
         assert restored.timestamp == original.timestamp
 
 
@@ -651,8 +652,8 @@ class TestStepResultHappyPaths:
         assert d["status"] == "completed"
         assert d["output"] == {"result": "ok"}
         assert isinstance(d["attempts"], list)
-        assert len(d["attempts"]) == 1
-        assert d["duration_ms"] == pytest.approx(200.0)
+        assert len(cast(list[object], d["attempts"])) == 1
+        assert d["duration_ms"] == pytest.approx(200.0)  # pyright: ignore[reportUnknownMemberType]
         assert d["timestamp"] == "2024-06-15T12:00:00+00:00"
 
     def test_from_dict_round_trip(self) -> None:
@@ -672,7 +673,7 @@ class TestStepResultHappyPaths:
         assert restored.attempts[0].error_type == "RuntimeError"
 
     def test_from_dict_empty_attempts(self) -> None:
-        d = {
+        d: dict[str, Any] = {
             "step_id": "s1",
             "status": "completed",
             "output": None,
@@ -732,7 +733,7 @@ class TestStepSecurity:
 
     def test_step_result_from_dict_does_not_reconstruct_callables(self) -> None:
         """from_dict must never execute or eval any field as code."""
-        data = {
+        data: dict[str, Any] = {
             "step_id": "evil_step",
             "status": "completed",
             "output": {"action": "__import__('os').system('rm -rf /')"},
@@ -743,7 +744,8 @@ class TestStepSecurity:
         result = StepResult.from_dict(data)
         # Output is stored as plain data, not executed
         assert isinstance(result.output, dict)
-        assert "__import__" in str(result.output)  # literal string, not executed
+        output = cast(dict[str, Any], result.output)  # pyright: ignore[reportUnknownMemberType]
+        assert "__import__" in str(output)  # literal string, not executed
 
 
 # ===========================================================================
@@ -797,9 +799,10 @@ class TestStepResultSerialization:
         ]
         result = _make_result(attempts=attempts)
         d = result.to_dict()
-        assert len(d["attempts"]) == 2
-        assert d["attempts"][0]["attempt_number"] == 1
-        assert d["attempts"][1]["status"] == "success"
+        attempt_list = cast(list[dict[str, object]], d["attempts"])
+        assert len(attempt_list) == 2
+        assert attempt_list[0]["attempt_number"] == 1
+        assert attempt_list[1]["status"] == "success"
 
     def test_to_dict_status_is_string_value(self) -> None:
         result = _make_result(status=StepStatus.SKIPPED)

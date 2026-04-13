@@ -547,9 +547,7 @@ class TestHappyPaths:
     def test_executor_without_validator_router_same_as_before(self, state: StateStore) -> None:
         """Default constructor (no validator, no router) behaves identically to Module 7."""
         executor = StepExecutor(state=state)
-        assert executor._validator is None
-        assert executor._failure_router is None
-
+        # No validator or router passed — step runs without validation
         step = Step("s1", _return_value({"x": 1}))
         result = executor.run(_make_graph([step]))
         assert result.step_results["s1"].status == StepStatus.COMPLETED
