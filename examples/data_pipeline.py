@@ -11,6 +11,8 @@ This is a realistic data pipeline: ingest records, validate and clean
 them individually via foreach, then aggregate the results.
 """
 
+from typing import Any, cast
+
 from kairos import (
     FailureAction,
     FailurePolicy,
@@ -48,7 +50,7 @@ aggregation_schema = Schema(
 # ---------------------------------------------------------------------------
 
 
-def ingest(ctx: StepContext) -> dict[str, object]:
+def ingest(ctx: StepContext) -> dict[str, Any]:
     """Simulate ingesting records from an external source."""
     # In a real workflow, this might call an API or read a file.
     # Here we read from initial state.
@@ -56,21 +58,20 @@ def ingest(ctx: StepContext) -> dict[str, object]:
     return {"records": records, "source": "initial_state"}
 
 
-def clean_record(ctx: StepContext) -> dict[str, object]:
+def clean_record(ctx: StepContext) -> dict[str, Any]:
     """Clean and validate a single record (runs once per item in foreach)."""
-    record = ctx.item
+    record = cast(dict[str, Any], ctx.item)
     # Normalize: strip whitespace, lowercase email
-    cleaned = {
+    return {
         "name": record["name"].strip(),
         "email": record["email"].strip().lower(),
         "score": float(record["score"]),
     }
-    return cleaned
 
 
-def aggregate(ctx: StepContext) -> dict[str, object]:
+def aggregate(ctx: StepContext) -> dict[str, Any]:
     """Aggregate all cleaned records into a summary."""
-    cleaned_records = ctx.inputs["clean"]
+    cleaned_records = cast(list[dict[str, Any] | None], ctx.inputs["clean"])
     total = len(cleaned_records)
     scores = [r["score"] for r in cleaned_records if r is not None]
     avg_score = sum(scores) / len(scores) if scores else 0.0
@@ -128,7 +129,7 @@ workflow = Workflow(
 if __name__ == "__main__":
     print("Running data-pipeline workflow...\n")
 
-    initial_data = {
+    initial_data: dict[str, object] = {
         "raw_records": [
             {"name": "Alice Johnson", "email": "alice@example.com", "score": 0.95},
             {"name": "Bob Smith", "email": "bob@example.com", "score": 0.82},
@@ -146,16 +147,17 @@ if __name__ == "__main__":
     # Show step results
     for step_name, step_result in result.step_results.items():
         print(f"  [{step_result.status.value}] {step_name}")
-        if step_result.output is not None:
-            if isinstance(step_result.output, list):
-                print(f"    -> {len(step_result.output)} items")
+        output = step_result.output
+        if output is not None:
+            if isinstance(output, list):
+                print(f"    -> {len(cast(list[Any], output))} items")
             else:
-                print(f"    -> {step_result.output}")
+                print(f"    -> {output}")
 
     print()
 
     # Show the aggregation
-    agg = result.step_results["aggregate"].output
+    agg = cast(dict[str, Any], result.step_results["aggregate"].output)
     print("Aggregation result:")
     print(f"  Total records: {agg['total_records']}")
     print(f"  Average score: {agg['average_score']}")

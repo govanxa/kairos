@@ -9,6 +9,8 @@ This is the "hello world" of Kairos. Three steps in a linear chain:
   prepare → process → summarize
 """
 
+from typing import Any, cast
+
 from kairos import Step, StepContext, Workflow, WorkflowStatus
 
 # ---------------------------------------------------------------------------
@@ -16,25 +18,25 @@ from kairos import Step, StepContext, Workflow, WorkflowStatus
 # ---------------------------------------------------------------------------
 
 
-def prepare(ctx: StepContext) -> dict[str, object]:
+def prepare(ctx: StepContext) -> dict[str, Any]:
     """Read initial input and prepare data for processing."""
     name = ctx.state.get("user_name", "World")
-    items = ctx.state.get("items", [1, 2, 3, 4, 5])
+    items = cast(list[int], ctx.state.get("items", [1, 2, 3, 4, 5]))
     return {"name": name, "items": items, "count": len(items)}
 
 
-def process(ctx: StepContext) -> dict[str, object]:
+def process(ctx: StepContext) -> dict[str, Any]:
     """Process the prepared data — double each item."""
-    prepared = ctx.inputs["prepare"]
-    items = prepared["items"]
+    prepared = cast(dict[str, Any], ctx.inputs["prepare"])
+    items = cast(list[int], prepared["items"])
     doubled = [x * 2 for x in items]
     return {"doubled": doubled, "total": sum(doubled)}
 
 
-def summarize(ctx: StepContext) -> dict[str, object]:
+def summarize(ctx: StepContext) -> dict[str, Any]:
     """Produce a final summary from processed data."""
-    prepared = ctx.inputs["prepare"]
-    processed = ctx.inputs["process"]
+    prepared = cast(dict[str, Any], ctx.inputs["prepare"])
+    processed = cast(dict[str, Any], ctx.inputs["process"])
     return {
         "greeting": f"Hello, {prepared['name']}!",
         "original_count": prepared["count"],
@@ -81,7 +83,7 @@ if __name__ == "__main__":
     print()
 
     # The final summary
-    summary_output = result.step_results["summarize"].output
+    summary_output = cast(dict[str, Any], result.step_results["summarize"].output)
     print(f"Final summary: {summary_output['summary']}")
 
     assert result.status == WorkflowStatus.COMPLETE
