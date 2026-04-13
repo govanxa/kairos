@@ -76,6 +76,10 @@ class OpenAIAdapter:
         base_url: Custom API base URL. Must be HTTPS for remote hosts (S15).
             None uses the OpenAI default endpoint.
         timeout: Request timeout in seconds. Defaults to 120.0.
+        allow_localhost: When True, HTTP on localhost / 127.0.0.1 / ::1 is
+            permitted. Intended for local models such as Ollama or LM Studio.
+            Defaults to False (secure by default). Has no effect on remote hosts —
+            remote URLs always require HTTPS regardless of this setting.
         **kwargs: Any additional keyword argument is checked for credential
             names (api_key, etc.) and raises SecurityError if found (S14).
 
@@ -92,6 +96,7 @@ class OpenAIAdapter:
         model: str = _DEFAULT_MODEL,
         base_url: str | None = None,
         timeout: float = _DEFAULT_TIMEOUT,
+        allow_localhost: bool = False,
         **kwargs: Any,
     ) -> None:
         # S14: reject any inline credential kwargs immediately
@@ -104,8 +109,10 @@ class OpenAIAdapter:
                 "Install it with: pip install kairos-sdk[openai]  or  pip install openai"
             )
 
-        # S15: enforce HTTPS for remote base URLs
-        enforce_https(base_url)
+        # S15: enforce HTTPS for remote base URLs.
+        # allow_localhost=True permits HTTP on loopback addresses for local models
+        # such as Ollama or LM Studio (never for remote hosts).
+        enforce_https(base_url, allow_localhost=allow_localhost)
 
         # S14: read API key exclusively from environment
         api_key = os.environ.get("OPENAI_API_KEY")
@@ -229,6 +236,7 @@ def openai_adapter(
     prompt_template: str,
     *,
     model: str = _DEFAULT_MODEL,
+    allow_localhost: bool = False,
     **adapter_kwargs: Any,
 ) -> Callable[..., dict[str, Any]]:
     """Factory that returns a step-action callable backed by OpenAIAdapter.
@@ -236,6 +244,15 @@ def openai_adapter(
     This is the primary developer-facing interface for using OpenAI in a step::
 
         Step(name="analyze", action=openai_adapter("Analyze this data: {data}"))
+
+    For local models (Ollama, LM Studio) on HTTP::
+
+        Step(
+            name="local",
+            action=openai_adapter(
+                "Query: {q}", base_url="http://localhost:11434", allow_localhost=True
+            ),
+        )
 
     The factory:
     1. Validates kwargs for inline credentials (SecurityError if found).
@@ -254,6 +271,9 @@ def openai_adapter(
             Reference step inputs as ``{key_name}`` and the foreach item
             as ``{item}``.
         model: OpenAI model identifier. Defaults to "gpt-4o".
+        allow_localhost: When True, HTTP on localhost / 127.0.0.1 / ::1 is
+            permitted. Intended for local models such as Ollama or LM Studio.
+            Defaults to False (secure by default).
         **adapter_kwargs: Additional kwargs forwarded to OpenAIAdapter.__init__().
             Credential kwargs (api_key, etc.) are always rejected.
 
@@ -271,7 +291,7 @@ def openai_adapter(
 
     # Create the adapter eagerly so credential errors surface at definition
     # time, not buried inside a workflow run.
-    adapter = OpenAIAdapter(model=model, **adapter_kwargs)
+    adapter = OpenAIAdapter(model=model, allow_localhost=allow_localhost, **adapter_kwargs)
 
     def _action(ctx: StepContext) -> dict[str, Any]:
         """Step action closure — formats template and calls the OpenAI API.

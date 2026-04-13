@@ -476,6 +476,68 @@ Step(name="evaluate", action=openai_adapter("Evaluate these ideas: {brainstorm}"
 Step(name="refine", action=claude("Refine the best idea: {evaluate}")),
 ```
 
+### Supported providers
+
+Kairos has dedicated adapters for Claude and OpenAI. Many other providers use the OpenAI-compatible API format, so the `OpenAIAdapter` works with them by changing the `base_url`:
+
+| Provider | Adapter | Install | Setup |
+|---|---|---|---|
+| **Claude** | `ClaudeAdapter` | `pip install kairos-ai[anthropic]` | `ANTHROPIC_API_KEY` env var |
+| **OpenAI** | `OpenAIAdapter` | `pip install kairos-ai[openai]` | `OPENAI_API_KEY` env var |
+| **DeepSeek** | `OpenAIAdapter` | `pip install kairos-ai[openai]` | `OPENAI_API_KEY` = your DeepSeek key |
+| **Mistral** | `OpenAIAdapter` | `pip install kairos-ai[openai]` | `OPENAI_API_KEY` = your Mistral key |
+| **Groq** | `OpenAIAdapter` | `pip install kairos-ai[openai]` | `OPENAI_API_KEY` = your Groq key |
+| **Together AI** | `OpenAIAdapter` | `pip install kairos-ai[openai]` | `OPENAI_API_KEY` = your Together key |
+| **Ollama** (local) | `OpenAIAdapter` | `pip install kairos-ai[openai]` | No API key needed |
+| **LM Studio** (local) | `OpenAIAdapter` | `pip install kairos-ai[openai]` | No API key needed |
+| **Gemini** | *Planned* | — | — |
+
+**Using OpenAI-compatible providers:**
+
+```python
+from kairos.adapters.openai_adapter import OpenAIAdapter
+
+# DeepSeek
+adapter = OpenAIAdapter(
+    model="deepseek-chat",
+    base_url="https://api.deepseek.com",
+)
+
+# Mistral
+adapter = OpenAIAdapter(
+    model="mistral-large-latest",
+    base_url="https://api.mistral.ai/v1",
+)
+
+# Groq (fast inference)
+adapter = OpenAIAdapter(
+    model="llama-3.3-70b-versatile",
+    base_url="https://api.groq.com/openai/v1",
+)
+```
+
+**Using local models (Ollama, LM Studio):**
+
+```python
+from kairos.adapters.openai_adapter import OpenAIAdapter
+
+# Ollama running locally (e.g., gemma3, llama3, mistral)
+adapter = OpenAIAdapter(
+    model="gemma3",
+    base_url="http://localhost:11434/v1",
+    allow_localhost=True,  # required for HTTP on localhost
+)
+
+# LM Studio running locally
+adapter = OpenAIAdapter(
+    model="gemma-3-4b",
+    base_url="http://localhost:1234/v1",
+    allow_localhost=True,
+)
+```
+
+Local models don't need API keys. Set `OPENAI_API_KEY` to any non-empty value (e.g., `"not-needed"`) since the adapter validates the env var exists.
+
 ### Without adapters
 
 You can always write your own step functions that call any LLM, API, or service. Adapters are convenience, not a requirement:
