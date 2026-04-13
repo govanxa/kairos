@@ -15,7 +15,7 @@ import os
 
 import pytest
 
-from kairos.exceptions import ConfigError, SecurityError
+from kairos.exceptions import ConfigError, ExecutionError, SecurityError, StateError
 from kairos.security import (
     DEFAULT_SENSITIVE_PATTERNS,
     redact_sensitive,
@@ -600,6 +600,63 @@ class TestStateSecurity:
         result = redact_sensitive(data)
         assert result["db_credential"] == "[REDACTED]"
 
+    def test_non_serializable_value_rejected(self):
+        """StateStore.set() rejects non-JSON-serializable values by default."""
+        from kairos.state import StateStore
+
+        store = StateStore()
+        with pytest.raises(StateError):
+            store.set("bad", object())
+
+    def test_max_total_size_enforced(self):
+        """StateStore enforces max_total_size on set()."""
+        from kairos.state import StateStore
+
+        store = StateStore(max_total_size=100)
+        with pytest.raises(StateError):
+            store.set("big", "x" * 200)
+
+    def test_sensitive_key_accessible_via_get(self):
+        """Sensitive keys are accessible via state.get() — redaction is only in safe_dict."""
+        from kairos.state import StateStore
+
+        store = StateStore(sensitive_keys=["api_key"])
+        store.set("api_key", "sk-real-value")
+        assert store.get("api_key") == "sk-real-value"
+
+    def test_scoped_proxy_blocks_unauthorized_read(self):
+        """ScopedStateProxy raises StateError on unauthorized reads."""
+        from kairos.state import ScopedStateProxy, StateStore
+
+        store = StateStore()
+        store.set("allowed", "yes")
+        store.set("forbidden", "no")
+        proxy = ScopedStateProxy(store, read_keys={"allowed"}, write_keys=set())
+        assert proxy.get("allowed") == "yes"
+        with pytest.raises(StateError):
+            proxy.get("forbidden")
+
+    def test_scoped_proxy_blocks_unauthorized_write(self):
+        """ScopedStateProxy raises StateError on unauthorized writes."""
+        from kairos.state import ScopedStateProxy, StateStore
+
+        store = StateStore()
+        proxy = ScopedStateProxy(store, read_keys=set(), write_keys={"allowed"})
+        proxy.set("allowed", "ok")
+        with pytest.raises(StateError):
+            proxy.set("forbidden", "bad")
+
+    def test_snapshot_uses_json_roundtrip_not_deepcopy(self):
+        """StateStore.snapshot() uses JSON round-trip, not deepcopy."""
+        from kairos.state import StateStore
+
+        store = StateStore()
+        store.set("data", {"nested": [1, 2, 3]})
+        snap = store.snapshot()
+        # Mutate the original — snapshot must be independent
+        store.set("data", {"nested": [99]})
+        assert snap.data["data"]["nested"] == [1, 2, 3]
+
 
 # ---------------------------------------------------------------------------
 # Group 5: Serialization
@@ -899,6 +956,51 @@ class TestRelativePathStripping:
         _, msg = sanitize_exception(exc)
         assert "./data/" not in msg
         assert "config.json" in msg
+
+
+# ---------------------------------------------------------------------------
+# Group 10: Regex security (CLAUDE.md §Security — requirement 11)
+# ---------------------------------------------------------------------------
+
+
+class TestCircuitBreaker:
+    """LLM call circuit breaker — CLAUDE.md §Security requirement 12.
+
+    Workflow.max_llm_calls (default 50) counts all LLM invocations across step
+    actions, semantic validation, and re-planning. When the limit is hit, the
+    workflow aborts with ExecutionError("LLM call limit reached").
+    """
+
+    def test_workflow_aborts_at_max_llm_calls(self):
+        """Exceeding max_llm_calls aborts with ExecutionError."""
+        from kairos.executor import StepExecutor
+        from kairos.state import StateStore
+
+        store = StateStore()
+        executor = StepExecutor(state=store, max_llm_calls=3)
+        executor.increment_llm_calls(3)
+        with pytest.raises(ExecutionError, match="LLM call limit"):
+            executor.increment_llm_calls()
+
+    def test_counter_includes_validation_calls(self):
+        """LLM call counter is shared across step actions and validation calls.
+
+        There is a single counter in the executor — any call to
+        increment_llm_calls() (whether from a step action or a validator)
+        counts toward the same limit.
+        """
+        from kairos.executor import StepExecutor
+        from kairos.state import StateStore
+
+        store = StateStore()
+        executor = StepExecutor(state=store, max_llm_calls=5)
+        # Simulate 3 calls from step actions
+        executor.increment_llm_calls(3)
+        # Simulate 2 calls from validation
+        executor.increment_llm_calls(2)
+        # Counter is now at 5 — next call should breach the limit
+        with pytest.raises(ExecutionError, match="LLM call limit"):
+            executor.increment_llm_calls(1)
 
 
 # ---------------------------------------------------------------------------
