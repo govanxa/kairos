@@ -130,6 +130,30 @@ result = workflow.run({"industry": "fintech"})
 ### Model-Agnostic
 Kairos doesn't care which LLM powers your steps. Any callable that accepts a `StepContext` works — plain functions, API calls, local models, or no LLM at all.
 
+**Built-in adapters** (optional) remove the boilerplate for popular providers:
+
+```python
+from kairos.adapters import claude, openai_model
+
+workflow = Workflow(
+    name="ai-pipeline",
+    steps=[
+        Step(name="research", action=claude("Research {item}"), foreach="topics"),
+        Step(name="draft", action=openai_model("Write a report on: {research}")),
+    ],
+)
+```
+
+Adapters handle SDK setup, credential sourcing (from environment variables — never hardcoded), response parsing, and error wrapping. Install only the providers you need:
+
+```bash
+pip install kairos-ai[anthropic]    # Claude adapter
+pip install kairos-ai[openai]       # OpenAI adapter
+pip install kairos-ai[all]          # All providers
+```
+
+Don't need adapters? Write your own step functions that call any API, model, or service — Kairos orchestrates, validates, and secures the pipeline regardless.
+
 ---
 
 ## Why Kairos?
@@ -249,9 +273,9 @@ Kairos is built as a single MVP phase combining the Core Engine and Validation L
 
 ## Status
 
-**MVP COMPLETE.** All 12 modules implemented and passing. Built with strict TDD (tests before code) and a full agent pipeline (architect, developer, code review, security audit, QA) for every module.
+**MVP COMPLETE.** All 12 modules implemented and passing. Built with strict TDD (tests before code) and a full agent pipeline (architect, developer, code review, security audit, QA) for every module. Published to [PyPI](https://pypi.org/project/kairos-ai/) as `kairos-ai` v0.1.0.
 
-**12 of 12 modules complete**
+**MVP — 12 of 12 modules complete**
 
 | Module | Status |
 |---|---|
@@ -267,9 +291,17 @@ Kairos is built as a single MVP phase combining the Core Engine and Validation L
 | `failure.py` | Done |
 | `executor+validation` | Done |
 | `workflow.py` (integration) | Done |
-| Concurrent step execution | Planned (first post-MVP) |
 
 893 tests passing, 97% coverage across 1761 statements in 12 source files.
+
+**Post-MVP — Ecosystem Phase**
+
+| Module | Status |
+|---|---|
+| Model Adapters (Claude, OpenAI) | In Progress |
+| Concurrent step execution | Planned |
+| Observability (RunLogger, CLI, Dashboard) | Planned |
+| Plugin System | Planned |
 
 ---
 
