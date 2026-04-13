@@ -3,6 +3,8 @@
 __version__ = "0.1.0"
 
 # Public enums
+# Model adapter base types — importable from kairos directly per CLAUDE.md (FIX 2)
+from kairos.adapters.base import ModelAdapter, ModelResponse, TokenUsage
 from kairos.enums import (
     AttemptStatus,
     FailureAction,
@@ -125,4 +127,8 @@ __all__ = [
     "Validator",
     # Workflow
     "Workflow",
+    # Model adapter base types (FIX 2)
+    "ModelAdapter",
+    "ModelResponse",
+    "TokenUsage",
 ]

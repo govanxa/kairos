@@ -786,4 +786,4 @@ class TestAsyncStub:
 
         wf = Workflow(name="wf", steps=[Step(name="s", action=_noop)])
         with pytest.raises(NotImplementedError):
-            asyncio.get_event_loop().run_until_complete(wf.run_async())
+            asyncio.run(wf.run_async())
