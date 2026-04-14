@@ -4,8 +4,11 @@
 [![PyPI downloads](https://img.shields.io/pypi/dm/kairos-ai)](https://pypi.org/project/kairos-ai/)
 [![Python](https://img.shields.io/pypi/pyversions/kairos-ai)](https://pypi.org/project/kairos-ai/)
 [![License](https://img.shields.io/badge/license-Apache%202.0-green)](https://github.com/govanxa/kairos/blob/main/LICENSE)
+[![GitHub stars](https://img.shields.io/github/stars/govanxa/kairos?style=social)](https://github.com/govanxa/kairos/stargazers)
 
 > *The right action, at the right time.*
+>
+> If you find Kairos useful, consider [giving it a star](https://github.com/govanxa/kairos) — it helps others discover the project.
 
 **Security-hardened, model-agnostic Python SDK for contract-enforced AI workflows with automatic recovery.**
 
