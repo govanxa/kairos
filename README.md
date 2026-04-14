@@ -383,6 +383,7 @@ pip install -e ".[dev]"
 | `examples/real_claude_concurrent.py` | **Concurrent execution** — 3 parallel Claude API calls + synthesis, with speedup measurement |
 | `examples/real_openai_concurrent.py` | **Concurrent execution** — 4 parallel OpenAI evaluation tracks + go/no-go recommendation |
 | `examples/run_logger.py` | **Run Logger** — all 4 sinks, verbosity levels, sensitive key redaction, RunLog inspection (no API keys needed) |
+| `examples/real_claude_logged.py` | **Run Logger + Claude** — concurrent Claude API calls with live lifecycle logging and RunLog inspection |
 
 ---
 
