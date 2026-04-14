@@ -163,6 +163,7 @@ def run_demo() -> None:
     print()
 
     run_log = logger.get_run_log()
+    assert run_log is not None
     print(f"Run ID:        {run_log.run_id}")
     print(f"Workflow:      {run_log.workflow_name}")
     print(f"Status:        {run_log.status}")
@@ -282,6 +283,7 @@ def run_demo() -> None:
 
     print(f"Workflow status: {error_result.status.value}")
     error_log = error_logger.get_run_log()
+    assert error_log is not None
     print(f"Events captured: {len(error_log.events)}")
     print(f"Total retries:   {error_log.summary.total_retries}")
     print(f"Failed steps:    {error_log.summary.failed_steps}")
@@ -313,6 +315,7 @@ def run_demo() -> None:
         )
         vwf.run({"query": "test"})
         vlog = vlg.get_run_log()
+        assert vlog is not None
         event_types = [e.event_type for e in vlog.events]
         print(f"  {level.value:8s} -> {len(vlog.events):2d} events: {event_types}")
 
