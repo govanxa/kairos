@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "kairos-ai"
-version = "0.2.0"
+version = "0.2.1"
 description = "Security-hardened, model-agnostic Python SDK for contract-enforced AI agent workflows"
 readme = "README.md"
 license = "Apache-2.0"
