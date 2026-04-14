@@ -685,6 +685,179 @@ Sequential steps (those without `parallel=True`) always fire hooks in topologica
 
 ---
 
+## 11. Structured Run Logging
+
+Kairos has a built-in **Run Logger** that captures every workflow event as structured, machine-readable data. It subscribes to the executor's lifecycle hooks and dispatches events to pluggable sinks.
+
+### Basic setup
+
+Create a `RunLogger` with one or more sinks and pass it as a hook to your workflow:
+
+```python
+from kairos import Workflow, Step, StepContext, RunLogger, ConsoleSink, LogLevel
+
+def fetch(ctx: StepContext) -> dict:
+    return {"items": ["alpha", "beta", "gamma"]}
+
+def process(ctx: StepContext) -> dict:
+    data = ctx.inputs["fetch"]
+    return {"count": len(data["items"])}
+
+# Create a logger with console output
+logger = RunLogger(
+    verbosity=LogLevel.NORMAL,
+    sinks=[ConsoleSink()],
+)
+
+workflow = Workflow(
+    name="logged-workflow",
+    steps=[
+        Step(name="fetch", action=fetch),
+        Step(name="process", action=process, depends_on=["fetch"]),
+    ],
+    hooks=[logger],  # attach the logger as a lifecycle hook subscriber
+)
+
+result = workflow.run({"query": "test"})
+```
+
+The `ConsoleSink` prints formatted events to stderr as they happen. You will see step start, step complete, and workflow complete events in the console.
+
+### Sink types
+
+Kairos provides four built-in sinks. Use one or combine several:
+
+```python
+from kairos import (
+    RunLogger, ConsoleSink, JSONLinesSink, FileSink, CallbackSink, LogLevel,
+)
+
+# Console — pretty-printed events to stderr (or any stream)
+console = ConsoleSink()
+
+# JSON Lines — one JSON object per line, appended to a .jsonl file
+# Great for log aggregation tools (jq, Datadog, Splunk)
+jsonl = JSONLinesSink("runs/my-workflow.jsonl")
+
+# File — writes the complete RunLog as a single JSON file on close()
+# Use this when you want one file per run
+file_sink = FileSink("runs/my-workflow-run.json")
+
+# Callback — forwards every event to your own function
+def my_handler(event):
+    print(f"[{event.event_type}] step={event.step_id}")
+
+callback = CallbackSink(my_handler)
+
+# Combine multiple sinks — each receives every event independently
+logger = RunLogger(
+    verbosity=LogLevel.NORMAL,
+    sinks=[console, jsonl, file_sink, callback],
+)
+```
+
+**Sink isolation:** If one sink fails (e.g., a file write error), the other sinks still receive the event. One broken sink never blocks the rest.
+
+### Verbosity levels
+
+The `verbosity` parameter controls how much detail the logger captures:
+
+```python
+from kairos import RunLogger, ConsoleSink, LogLevel
+
+# MINIMAL — only workflow start/complete, step failures, validation failures
+logger = RunLogger(verbosity=LogLevel.MINIMAL, sinks=[ConsoleSink()])
+
+# NORMAL (default) — adds step start/complete/retry/skip, validation complete
+logger = RunLogger(verbosity=LogLevel.NORMAL, sinks=[ConsoleSink()])
+
+# VERBOSE — adds validation_start, full redacted step output
+logger = RunLogger(verbosity=LogLevel.VERBOSE, sinks=[ConsoleSink()])
+```
+
+| Level | What you see |
+|---|---|
+| MINIMAL | Workflow start/complete, step failures, validation failures |
+| NORMAL | Everything in MINIMAL + step start/complete/retry/skip, validation complete |
+| VERBOSE | Everything in NORMAL + validation_start, full redacted step output |
+
+Use MINIMAL in production for low-noise monitoring. Use VERBOSE during development to see exactly what data flows between steps.
+
+### Retrieving the RunLog
+
+After a workflow completes, call `logger.get_log()` to get the complete structured record:
+
+```python
+logger = RunLogger(verbosity=LogLevel.NORMAL, sinks=[ConsoleSink()])
+workflow = Workflow(name="example", steps=[...], hooks=[logger])
+
+result = workflow.run({"input": "data"})
+
+# Get the complete run record
+run_log = logger.get_log()
+
+print(f"Run ID: {run_log.run_id}")
+print(f"Workflow: {run_log.workflow_name}")
+print(f"Status: {run_log.status}")
+print(f"Events: {len(run_log.events)}")
+
+# Access the summary metrics
+summary = run_log.summary
+print(f"Steps completed: {summary.steps_completed}")
+print(f"Steps failed: {summary.steps_failed}")
+print(f"Steps skipped: {summary.steps_skipped}")
+print(f"Total retries: {summary.total_retries}")
+print(f"Duration: {summary.duration_ms}ms")
+
+# Iterate individual events
+for event in run_log.events:
+    print(f"  [{event.level.value}] {event.event_type} step={event.step_id}")
+
+# Serialize to JSON for storage or analysis
+import json
+run_json = json.dumps(run_log.to_dict(), indent=2)
+```
+
+### Sensitive key redaction
+
+The Run Logger integrates with Kairos's sensitive key redaction system. Any state key matching a sensitive pattern is automatically redacted to `"[REDACTED]"` in all log events **before** they reach any sink:
+
+```python
+logger = RunLogger(
+    verbosity=LogLevel.VERBOSE,
+    sinks=[ConsoleSink(), JSONLinesSink("runs/audit.jsonl")],
+    sensitive_keys=["*api_key*", "*password*", "*token*"],
+)
+
+workflow = Workflow(
+    name="secure-logged",
+    steps=[...],
+    hooks=[logger],
+    sensitive_keys=["*api_key*", "*password*", "*token*"],
+)
+
+# When a step outputs {"result": "ok", "api_key": "sk-secret-123"}
+# The log event will contain {"result": "ok", "api_key": "[REDACTED]"}
+# The raw value is NEVER written to any sink
+```
+
+This means you can safely pipe logs to external systems without worrying about credential leakage. The redaction happens inside the `RunLogger` before dispatch, so even a custom `CallbackSink` receives only redacted data.
+
+### Writing to files
+
+The `JSONLinesSink` and `FileSink` both sanitize file paths via `sanitize_path()` to prevent path traversal attacks. Only characters matching `[a-zA-Z0-9_-]` are allowed in filenames:
+
+```python
+# Safe — characters sanitized automatically
+jsonl = JSONLinesSink("runs/my-workflow.jsonl")
+file_sink = FileSink("runs/output.json")
+
+# Path traversal attempts raise SecurityError
+# JSONLinesSink("../../etc/passwd")  # SecurityError
+```
+
+---
+
 ## Next Steps
 
 - **Run the examples** in the `examples/` directory to see more patterns
@@ -711,3 +884,13 @@ Sequential steps (those without `parallel=True`) always fire hooks in topologica
 | `gemini` | `from kairos.adapters.gemini import gemini` | Gemini adapter factory |
 | `ModelResponse` | `from kairos import ModelResponse` | Normalized LLM response |
 | `TokenUsage` | `from kairos import TokenUsage` | Token count from LLM call |
+| `RunLogger` | `from kairos import RunLogger` | Structured event logger (ExecutorHooks) |
+| `RunLog` | `from kairos import RunLog` | Complete run record |
+| `LogEvent` | `from kairos import LogEvent` | Single structured event |
+| `RunSummary` | `from kairos import RunSummary` | Aggregated run metrics |
+| `LogLevel` | `from kairos import LogLevel` | MINIMAL, NORMAL, VERBOSE |
+| `ConsoleSink` | `from kairos import ConsoleSink` | Pretty-print events to stderr |
+| `JSONLinesSink` | `from kairos import JSONLinesSink` | One JSON per line to .jsonl file |
+| `FileSink` | `from kairos import FileSink` | Complete RunLog as single JSON file |
+| `CallbackSink` | `from kairos import CallbackSink` | Forward events to your callback |
+| `LogSink` | `from kairos import LogSink` | Protocol for custom sink implementations |
