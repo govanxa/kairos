@@ -1,6 +1,8 @@
 # Kairos
 
-[![Python](https://img.shields.io/badge/python-3.11%2B-blue)](https://github.com/govanxa/kairos)
+[![PyPI version](https://img.shields.io/pypi/v/kairos-ai)](https://pypi.org/project/kairos-ai/)
+[![PyPI downloads](https://img.shields.io/pypi/dm/kairos-ai)](https://pypi.org/project/kairos-ai/)
+[![Python](https://img.shields.io/pypi/pyversions/kairos-ai)](https://pypi.org/project/kairos-ai/)
 [![License](https://img.shields.io/badge/license-Apache%202.0-green)](https://github.com/govanxa/kairos/blob/main/LICENSE)
 
 > *The right action, at the right time.*

@@ -33,6 +33,7 @@ pydantic = ["pydantic>=2.0"]
 cli = ["typer>=0.9"]
 anthropic = ["anthropic>=0.20"]
 openai = ["openai>=1.0"]
+gemini = ["google-genai>=1.0"]
 dev = [
     "pytest>=8.0",
     "pytest-cov>=5.0",
@@ -41,7 +42,7 @@ dev = [
     "ruff>=0.5",
     "pyright>=1.1",
 ]
-all = ["kairos-ai[pydantic,cli,anthropic,openai]"]
+all = ["kairos-ai[pydantic,cli,anthropic,openai,gemini]"]
 
 [project.urls]
 Homepage = "https://github.com/govanxa/kairos"
