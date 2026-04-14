@@ -76,6 +76,7 @@ def plan_research(ctx: StepContext) -> dict[str, Any]:
         f"Format: one sentence per line, no numbering.",
         max_tokens=200,
     )
+    ctx.increment_llm_calls()
 
     lines = [line.strip() for line in response.text.strip().splitlines() if line.strip()]
     # Pad to 3 if the LLM returned fewer lines
@@ -106,6 +107,7 @@ def analyze_security(ctx: StepContext) -> dict[str, Any]:
         f"End with one key finding sentence starting with 'KEY FINDING:'",
         max_tokens=300,
     )
+    ctx.increment_llm_calls()
 
     text = response.text
     key = _extract_key_finding(text)
@@ -123,6 +125,7 @@ def analyze_market(ctx: StepContext) -> dict[str, Any]:
         f"End with one key finding sentence starting with 'KEY FINDING:'",
         max_tokens=300,
     )
+    ctx.increment_llm_calls()
 
     text = response.text
     key = _extract_key_finding(text)
@@ -140,6 +143,7 @@ def analyze_technology(ctx: StepContext) -> dict[str, Any]:
         f"End with one key finding sentence starting with 'KEY FINDING:'",
         max_tokens=300,
     )
+    ctx.increment_llm_calls()
 
     text = response.text
     key = _extract_key_finding(text)
@@ -167,6 +171,7 @@ def synthesize(ctx: StepContext) -> dict[str, Any]:
         f"TECHNOLOGY: {tech['key_finding']}",
         max_tokens=400,
     )
+    ctx.increment_llm_calls()
 
     total_tokens = (
         security["tokens_used"]
@@ -280,6 +285,7 @@ if __name__ == "__main__":
     print(f"Status: {result.status.value}")
     print(f"Kairos duration: {result.duration_ms:.0f}ms")
     print(f"Wall-clock time: {wall_seconds:.1f}s")
+    print(f"LLM calls tracked: {result.llm_calls}")
     print()
 
     # --- Per-step timing ---

@@ -1016,6 +1016,39 @@ class TestCircuitBreaker:
         with pytest.raises(ExecutionError, match="LLM call limit"):
             executor.increment_llm_calls(1)
 
+    def test_circuit_breaker_works_through_step_context(self):
+        """End-to-end: step calling ctx.increment_llm_calls() triggers breaker."""
+        from kairos.executor import StepExecutor
+        from kairos.plan import TaskGraph
+        from kairos.state import StateStore
+        from kairos.step import Step, StepContext
+
+        def llm_heavy_step(ctx: StepContext) -> dict[str, object]:
+            # Trip the circuit breaker (limit is 2)
+            ctx.increment_llm_calls()
+            ctx.increment_llm_calls()
+            ctx.increment_llm_calls()  # this triggers the breaker
+            return {}
+
+        store = StateStore()
+        executor = StepExecutor(state=store, max_llm_calls=2)
+        graph = TaskGraph(name="test", steps=[Step("s", llm_heavy_step)])
+
+        # The circuit breaker propagates as ExecutionError out of run()
+        with pytest.raises(ExecutionError, match="LLM call limit"):
+            executor.run(graph)
+
+    def test_negative_increment_rejected(self):
+        """Negative count cannot bypass circuit breaker."""
+        from kairos.executor import StepExecutor
+        from kairos.state import StateStore
+
+        store = StateStore()
+        executor = StepExecutor(state=store, max_llm_calls=3)
+        # Negative count must be rejected immediately — cannot sneak past validation
+        with pytest.raises(ConfigError, match="must be >= 1"):
+            executor.increment_llm_calls(-1)
+
 
 # ---------------------------------------------------------------------------
 # Group 10: Regex security (CLAUDE.md §Security — requirement 11)

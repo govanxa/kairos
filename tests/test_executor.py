@@ -2053,3 +2053,71 @@ class TestConcurrentSerialization:
         json_str = json.dumps(d)  # must not raise
         assert isinstance(json_str, str)
         assert set(cast(dict[str, Any], d["step_results"]).keys()) == {"a", "b"}
+
+
+# ---------------------------------------------------------------------------
+# Group: increment_llm_calls input validation (Step 2)
+# ---------------------------------------------------------------------------
+
+
+class TestIncrementLLMCallsValidation:
+    """StepExecutor.increment_llm_calls() rejects invalid count values."""
+
+    def test_negative_count_rejected(self, state: StateStore) -> None:
+        """increment_llm_calls rejects negative counts."""
+        executor = StepExecutor(state=state)
+        with pytest.raises(ConfigError, match="must be >= 1"):
+            executor.increment_llm_calls(-1)
+
+    def test_zero_count_rejected(self, state: StateStore) -> None:
+        """increment_llm_calls rejects zero count."""
+        executor = StepExecutor(state=state)
+        with pytest.raises(ConfigError, match="must be >= 1"):
+            executor.increment_llm_calls(0)
+
+
+# ---------------------------------------------------------------------------
+# Group: _build_context injects LLM callback (Step 3)
+# ---------------------------------------------------------------------------
+
+
+class TestBuildContextLLMCallback:
+    """_build_context injects the executor's increment_llm_calls as the callback."""
+
+    def test_build_context_injects_llm_callback(self, state: StateStore) -> None:
+        """_build_context provides a working _llm_call_callback in StepContext."""
+        executor = StepExecutor(state=state, max_llm_calls=10)
+        step = Step("s", _noop)
+        ctx = executor._build_context(step, attempt=1, item=None, retry_context=None)  # pyright: ignore[reportPrivateUsage]
+
+        assert ctx._llm_call_callback is not None  # pyright: ignore[reportPrivateUsage]
+        # Calling it must increment the counter
+        ctx.increment_llm_calls(2)
+        assert executor.llm_call_count == 2
+
+    def test_callback_does_not_expose_executor(self, state: StateStore) -> None:
+        """_llm_call_callback must not expose the executor via __self__."""
+        executor = StepExecutor(state=state)
+        step = Step("s", _noop)
+        ctx = executor._build_context(step, attempt=1, item=None, retry_context=None)  # pyright: ignore[reportPrivateUsage]
+        assert not hasattr(ctx._llm_call_callback, "__self__")  # pyright: ignore[reportPrivateUsage]
+
+    def test_step_action_can_trigger_circuit_breaker_via_context(self, state: StateStore) -> None:
+        """Step action calling ctx.increment_llm_calls() triggers the circuit breaker.
+
+        The _LLMCircuitBreakerError propagates out of run() as ExecutionError,
+        consistent with the existing circuit-breaker behavior (TestLLMCallLimit).
+        """
+
+        def greedy_step(ctx: StepContext) -> dict[str, object]:
+            # Calls increment enough to trip the breaker (limit is 2)
+            for _ in range(3):
+                ctx.increment_llm_calls()
+            return {}
+
+        executor = StepExecutor(state=state, max_llm_calls=2)
+        graph = _make_graph([Step("s", greedy_step)])
+
+        # Circuit breaker propagates as ExecutionError out of run()
+        with pytest.raises(ExecutionError, match="LLM call limit"):
+            executor.run(graph)
