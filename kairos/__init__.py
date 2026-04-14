@@ -10,6 +10,7 @@ from kairos.enums import (
     FailureAction,
     FailureType,
     ForeachPolicy,
+    LogLevel,
     LogVerbosity,
     Severity,
     StepStatus,
@@ -38,6 +39,19 @@ from kairos.failure import (
     FailurePolicy,
     FailureRouter,
     RecoveryDecision,
+)
+
+# Logger — run observability (import after workflow to avoid circular issues)
+from kairos.logger import (
+    CallbackSink,
+    ConsoleSink,
+    FileSink,
+    JSONLinesSink,
+    LogEvent,
+    LogSink,
+    RunLog,
+    RunLogger,
+    RunSummary,
 )
 
 # Plan
@@ -73,6 +87,7 @@ __all__ = [
     "FailureAction",
     "FailureType",
     "ForeachPolicy",
+    "LogLevel",
     "LogVerbosity",
     "Severity",
     "StepStatus",
@@ -125,6 +140,16 @@ __all__ = [
     "LLMValidator",
     "StructuralValidator",
     "Validator",
+    # Logger
+    "CallbackSink",
+    "ConsoleSink",
+    "FileSink",
+    "JSONLinesSink",
+    "LogEvent",
+    "LogSink",
+    "RunLog",
+    "RunLogger",
+    "RunSummary",
     # Workflow
     "Workflow",
     # Model adapter base types (FIX 2)
