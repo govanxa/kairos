@@ -348,6 +348,10 @@ pip install -e ".[dev]"
 | `examples/broken_data.py` | What happens when bad data hits a contract — 4 scenarios showing Kairos blocking corrupted data |
 | `examples/scoped_state.py` | What happens when a step tries to read unauthorized state keys — security boundary demo |
 | `examples/llm_workflow.py` | Using LLM adapters — Claude and OpenAI in the same workflow with validation and retry |
+| `examples/real_claude.py` | Real Claude API calls — foreach fan-out, output contracts, failure policies with retry |
+| `examples/real_openai.py` | Real OpenAI API calls — validation failure on first attempt, automatic retry and recovery |
+| `examples/real_claude_concurrent.py` | **Concurrent execution** — 3 parallel Claude API calls + synthesis, with speedup measurement |
+| `examples/real_openai_concurrent.py` | **Concurrent execution** — 4 parallel OpenAI evaluation tracks + go/no-go recommendation |
 
 ---
 
