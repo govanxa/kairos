@@ -89,6 +89,12 @@ disallow_incomplete_defs = true
 check_untyped_defs = true
 no_implicit_optional = true
 
+# pydantic is optional — type: ignore[import-not-found] is needed when it's
+# absent but flagged as unused when it's installed. Suppress that per-module.
+[[tool.mypy.overrides]]
+module = "kairos.schema"
+warn_unused_ignores = false
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = ["test_*.py"]

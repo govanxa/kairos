@@ -594,8 +594,8 @@ class Schema:
             ConfigError: If pydantic is not installed or model is not a BaseModel subclass.
         """
         try:
-            import pydantic  # noqa: PLC0415,F401,I001
-            from pydantic import BaseModel  # noqa: PLC0415,E501,I001
+            import pydantic  # type: ignore[import-not-found]  # noqa: PLC0415,F401,I001
+            from pydantic import BaseModel  # type: ignore[import-not-found]  # noqa: PLC0415,E501,I001
         except ImportError as exc:
             raise ConfigError(
                 "pydantic is required for Schema.from_pydantic(). "
