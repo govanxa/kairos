@@ -19,6 +19,7 @@ from __future__ import annotations
 import json
 import logging
 import sys
+import threading
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import cast
@@ -94,6 +95,7 @@ class StateStore:
         self._allow_non_serializable = allow_non_serializable
         extra = sensitive_keys or []
         self._sensitive_patterns: list[str] = DEFAULT_SENSITIVE_PATTERNS + extra
+        self._lock = threading.Lock()
 
     # ------------------------------------------------------------------
     # Core read/write
@@ -113,11 +115,12 @@ class StateStore:
         Raises:
             StateError: When the key is absent and no default was provided.
         """
-        if key in self._data:
-            return self._data[key]
-        if default is not _SENTINEL:
-            return default
-        raise StateError(f"Key {key!r} not found in state store.", key=key)
+        with self._lock:
+            if key in self._data:
+                return self._data[key]
+            if default is not _SENTINEL:
+                return default
+            raise StateError(f"Key {key!r} not found in state store.", key=key)
 
     def set(self, key: str, value: object) -> None:
         """Store a value under the given key.
@@ -138,32 +141,35 @@ class StateStore:
                 allow_non_serializable is False), or when the total state size
                 would exceed max_total_size.
         """
+        # Measure size outside the lock — JSON serialization can be slow and
+        # does not touch shared state.
         value_size = self._measure_size(key, value)
 
-        # Subtract the old size when overwriting an existing key
-        old_size = 0
-        if key in self._data:
-            old_size = self._measure_size(key, self._data[key])
+        with self._lock:
+            # Subtract the old size when overwriting an existing key
+            old_size = 0
+            if key in self._data:
+                old_size = self._measure_size(key, self._data[key])
 
-        new_total = self._total_size - old_size + value_size
-        if new_total > self._max_total_size:
-            raise StateError(
-                f"Cannot set key {key!r}: total state size would exceed the "
-                f"configured limit of {self._max_total_size} bytes.",
-                key=key,
-            )
+            new_total = self._total_size - old_size + value_size
+            if new_total > self._max_total_size:
+                raise StateError(
+                    f"Cannot set key {key!r}: total state size would exceed the "
+                    f"configured limit of {self._max_total_size} bytes.",
+                    key=key,
+                )
 
-        if value_size > self._max_value_size:
-            logger.warning(
-                "State value for key %r is %d bytes, which exceeds the "
-                "soft per-value limit of %d bytes.",
-                key,
-                value_size,
-                self._max_value_size,
-            )
+            if value_size > self._max_value_size:
+                logger.warning(
+                    "State value for key %r is %d bytes, which exceeds the "
+                    "soft per-value limit of %d bytes.",
+                    key,
+                    value_size,
+                    self._max_value_size,
+                )
 
-        self._data[key] = value
-        self._total_size = new_total
+            self._data[key] = value
+            self._total_size = new_total
 
     def has(self, key: str) -> bool:
         """Check whether a key exists in the store.
@@ -174,7 +180,8 @@ class StateStore:
         Returns:
             True if the key exists, False otherwise.
         """
-        return key in self._data
+        with self._lock:
+            return key in self._data
 
     def keys(self) -> list[str]:
         """Return a list of all keys currently in the store.
@@ -182,7 +189,8 @@ class StateStore:
         Returns:
             List of key strings in arbitrary order.
         """
-        return list(self._data.keys())
+        with self._lock:
+            return list(self._data.keys())
 
     def delete(self, key: str) -> None:
         """Remove a key from the store and update the tracked size.
@@ -193,11 +201,14 @@ class StateStore:
         Raises:
             StateError: When the key does not exist.
         """
-        if key not in self._data:
-            raise StateError(f"Cannot delete key {key!r}: key not found in state store.", key=key)
-        old_size = self._measure_size(key, self._data[key])
-        del self._data[key]
-        self._total_size -= old_size
+        with self._lock:
+            if key not in self._data:
+                raise StateError(
+                    f"Cannot delete key {key!r}: key not found in state store.", key=key
+                )
+            old_size = self._measure_size(key, self._data[key])
+            del self._data[key]
+            self._total_size -= old_size
 
     # ------------------------------------------------------------------
     # Snapshot / restore
@@ -216,13 +227,14 @@ class StateStore:
         Returns:
             A frozen StateSnapshot containing the current data.
         """
-        try:
-            data_copy: dict[str, object] = json.loads(json.dumps(self._data))
-        except (TypeError, ValueError) as exc:
-            raise StateError(
-                "Cannot snapshot: state contains non-JSON-serializable values. "
-                "Snapshot requires all values to be JSON-safe."
-            ) from exc
+        with self._lock:
+            try:
+                data_copy: dict[str, object] = json.loads(json.dumps(self._data))
+            except (TypeError, ValueError) as exc:
+                raise StateError(
+                    "Cannot snapshot: state contains non-JSON-serializable values. "
+                    "Snapshot requires all values to be JSON-safe."
+                ) from exc
         return StateSnapshot(
             data=data_copy,
             step_id=step_id,
@@ -240,8 +252,9 @@ class StateStore:
             snapshot: A StateSnapshot previously created by snapshot().
         """
         restored: dict[str, object] = json.loads(json.dumps(snapshot.data))
-        self._data = restored
-        self._total_size = self._calculate_total_size()
+        with self._lock:
+            self._data = restored
+            self._total_size = self._calculate_total_size()
 
     # ------------------------------------------------------------------
     # Export
@@ -256,12 +269,13 @@ class StateStore:
         Returns:
             A JSON round-trip copy of all stored key-value pairs.
         """
-        try:
-            return cast(dict[str, object], json.loads(json.dumps(self._data)))
-        except (TypeError, ValueError) as exc:
-            raise StateError(
-                "Cannot call to_dict: state contains non-JSON-serializable values."
-            ) from exc
+        with self._lock:
+            try:
+                return cast(dict[str, object], json.loads(json.dumps(self._data)))
+            except (TypeError, ValueError) as exc:
+                raise StateError(
+                    "Cannot call to_dict: state contains non-JSON-serializable values."
+                ) from exc
 
     def to_safe_dict(self) -> dict[str, object]:
         """Return a redacted copy of the store's data for safe export.
@@ -272,7 +286,8 @@ class StateStore:
         Returns:
             A dict with sensitive values replaced by the string '[REDACTED]'.
         """
-        return redact_sensitive(self._data, sensitive_patterns=self._sensitive_patterns)
+        with self._lock:
+            return redact_sensitive(self._data, sensitive_patterns=self._sensitive_patterns)
 
     # ------------------------------------------------------------------
     # Bulk operations

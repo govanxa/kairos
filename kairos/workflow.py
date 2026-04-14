@@ -86,6 +86,7 @@ class Workflow:
         sensitive_keys: list[str] | None = None,
         strict: bool = False,
         metadata: dict[str, object] | None = None,
+        max_concurrency: int | None = None,
     ) -> None:
         # --- Validate name ---
         if not name or not name.strip():
@@ -104,6 +105,7 @@ class Workflow:
         self._sensitive_keys = sensitive_keys
         self._strict = strict
         self._metadata: dict[str, object] = dict(metadata) if metadata else {}
+        self._max_concurrency = max_concurrency
 
         # --- Build TaskGraph (validates name, then validate() checks structure) ---
         self._graph = TaskGraph(name=name, steps=self._steps, metadata=self._metadata)
@@ -173,6 +175,7 @@ class Workflow:
             max_llm_calls=self._max_llm_calls,
             validator=validator,
             failure_router=failure_router,
+            max_concurrency=self._max_concurrency,
         )
 
         return executor.run(self._graph)
@@ -218,6 +221,7 @@ class Workflow:
             "max_llm_calls": self._max_llm_calls,
             "strict": self._strict,
             "failure_policy": self._failure_policy.to_dict() if self._failure_policy else None,
+            "max_concurrency": self._max_concurrency,
         }
         return d
 
@@ -272,6 +276,19 @@ class Workflow:
             The FailurePolicy passed to the constructor, or None.
         """
         return self._failure_policy
+
+    @property
+    def max_concurrency(self) -> int | None:
+        """The maximum concurrent parallel step count, or None for no explicit limit.
+
+        When None, the executor derives an effective limit from the number of
+        parallel steps in the graph (capped at 32). When set, the executor takes
+        min(parallel_count, 32, max_concurrency) as the thread pool size.
+
+        Returns:
+            The max_concurrency value passed to the constructor, or None.
+        """
+        return self._max_concurrency
 
     # ------------------------------------------------------------------
     # Dunder helpers

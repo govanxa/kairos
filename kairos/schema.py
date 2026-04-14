@@ -595,7 +595,7 @@ class Schema:
         """
         try:
             import pydantic  # type: ignore[import-not-found]  # noqa: PLC0415,F401,I001
-            from pydantic import BaseModel  # type: ignore[import-not-found,unused-ignore]  # noqa: PLC0415,E501,I001
+            from pydantic import BaseModel  # type: ignore[import-not-found]  # noqa: PLC0415,E501,I001
         except ImportError as exc:
             raise ConfigError(
                 "pydantic is required for Schema.from_pydantic(). "

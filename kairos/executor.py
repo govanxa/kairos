@@ -21,8 +21,9 @@ from __future__ import annotations
 import json
 import logging
 import random
+import threading
 import time
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import Future, ThreadPoolExecutor, as_completed
 from concurrent.futures import TimeoutError as FutureTimeoutError
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -306,6 +307,7 @@ class StepExecutor:
         max_llm_calls: int = 50,
         validator: StructuralValidator | None = None,
         failure_router: FailureRouter | None = None,
+        max_concurrency: int | None = None,
     ) -> None:
         self._state = state
         self._hooks: list[ExecutorHooks] = hooks or []
@@ -313,6 +315,10 @@ class StepExecutor:
         self._llm_call_count: int = 0
         self._validator = validator
         self._failure_router = failure_router
+        self._max_concurrency = max_concurrency
+        # Locks for thread-safe concurrent execution
+        self._llm_call_lock = threading.Lock()
+        self._hook_lock = threading.Lock()
 
     # ------------------------------------------------------------------
     # Public API
@@ -332,6 +338,7 @@ class StepExecutor:
 
         Step actions call this method each time they invoke an LLM to participate
         in the circuit-breaker. Semantic validators and re-planning also call this.
+        Thread-safe: protected by _llm_call_lock for concurrent execution.
 
         Args:
             count: Number of LLM calls to add. Defaults to 1.
@@ -339,18 +346,23 @@ class StepExecutor:
         Raises:
             ExecutionError: When the new total would reach or exceed max_llm_calls.
         """
-        self._llm_call_count += count
-        if self._llm_call_count > self._max_llm_calls:
-            raise _LLMCircuitBreakerError(
-                f"LLM call limit reached: {self._llm_call_count} calls exceed "
-                f"the configured maximum of {self._max_llm_calls}."
-            )
+        with self._llm_call_lock:
+            self._llm_call_count += count
+            if self._llm_call_count > self._max_llm_calls:
+                raise _LLMCircuitBreakerError(
+                    f"LLM call limit reached: {self._llm_call_count} calls exceed "
+                    f"the configured maximum of {self._max_llm_calls}."
+                )
 
     def run(self, graph: TaskGraph) -> WorkflowResult:
-        """Execute all steps in *graph* in topological order.
+        """Execute all steps in *graph*, choosing sequential or concurrent path.
 
         Validates the graph structure first — PlanError is raised before any
         step runs if the graph is invalid (cycles, missing dependencies, etc.).
+
+        When any step in the graph has ``config.parallel=True``, the concurrent
+        scheduler (``_run_concurrent``) is used. Otherwise the sequential path
+        (``_run_sequential``) is used for full backwards compatibility.
 
         Args:
             graph: The TaskGraph to execute.
@@ -369,6 +381,26 @@ class StepExecutor:
         if errors:
             raise errors[0]
 
+        # Dispatch to concurrent scheduler if any step requests parallel execution
+        has_parallel = any(step.config.parallel for step in graph.steps)
+        if has_parallel:
+            return self._run_concurrent(graph)
+        return self._run_sequential(graph)
+
+    def _run_sequential(self, graph: TaskGraph) -> WorkflowResult:
+        """Execute all steps in *graph* in topological order (sequential path).
+
+        This is the original execution path. It is used when no steps have
+        ``config.parallel=True``. Behavior is identical to the pre-v0.3.0
+        executor — no threading, no concurrent scheduling.
+
+        Args:
+            graph: The validated TaskGraph to execute.
+
+        Returns:
+            A WorkflowResult with the final status, per-step results, and
+            the redacted final state.
+        """
         start_time = time.monotonic()
         start_timestamp = datetime.now(tz=UTC)
 
@@ -398,10 +430,7 @@ class StepExecutor:
                 continue
 
             # --- Execute: foreach or single ---
-            if step.config.foreach is not None:
-                step_result = self._execute_foreach(step)
-            else:
-                step_result = self._execute_with_retries(step)
+            step_result = self._execute_step_entry(step)
 
             step_results[step.name] = step_result
 
@@ -427,6 +456,169 @@ class StepExecutor:
         self._emit_hook("on_workflow_complete", result)
 
         return result
+
+    def _run_concurrent(self, graph: TaskGraph) -> WorkflowResult:
+        """Execute steps using the ready-set concurrent scheduler.
+
+        Steps with ``config.parallel=True`` are submitted to a ThreadPoolExecutor
+        in batches whenever they become ready (all dependencies completed). Steps
+        without ``parallel=True`` execute sequentially one at a time within the
+        same scheduler loop.
+
+        Cascade skipping is applied in each loop iteration before computing the
+        ready set — steps whose dependencies failed are marked as skipped (and
+        added to the failed set so their dependents also skip).
+
+        Args:
+            graph: The validated TaskGraph to execute (already validated by run()).
+
+        Returns:
+            A WorkflowResult with the final status, per-step results, and
+            the redacted final state.
+        """
+        start_time = time.monotonic()
+        start_timestamp = datetime.now(tz=UTC)
+        self._emit_hook("on_workflow_start", graph)
+
+        step_results: dict[str, StepResult] = {}
+        completed_names: set[str] = set()
+        failed_names: set[str] = set()
+
+        effective_workers = self._effective_concurrency(graph)
+
+        with ThreadPoolExecutor(max_workers=effective_workers) as pool:
+            while True:
+                # Phase 1: Cascade-skip steps with failed dependencies.
+                # Re-check in each iteration to handle transitive cascades.
+                cascade_skips = graph.get_cascade_skip_steps(failed_names, completed_names)
+                for step in cascade_skips:
+                    failed_dep = next(d for d in step.depends_on if d in failed_names)
+                    skip_reason = f"dependency '{failed_dep}' failed"
+                    step_result = self._make_skip_result(step, reason=skip_reason)
+                    step_results[step.name] = step_result
+                    self._emit_hook("on_step_skip", step, skip_reason)
+                    self._state.set(step.name, None)
+                    # NOTE: Cascade-skipped steps are added to both completed_names (so they
+                    # won't appear in get_ready_steps) and failed_names (so their dependents
+                    # will also cascade-skip). This overlap is intentional.
+                    failed_names.add(step.name)
+                    completed_names.add(step.name)
+
+                # Phase 2: Get steps whose dependencies are all satisfied.
+                ready = graph.get_ready_steps(completed_names, failed_names)
+                if not ready:
+                    break  # Nothing left to do
+
+                # Phase 3: Partition into parallel and sequential groups.
+                parallel_ready = [s for s in ready if s.config.parallel]
+                sequential_ready = [s for s in ready if not s.config.parallel]
+
+                # Phase 4a: Submit all parallel-ready steps to the thread pool.
+                if parallel_ready:
+                    futures: dict[Future[StepResult], Step] = {}
+                    for step in parallel_ready:
+                        future = pool.submit(self._execute_step_entry, step)
+                        futures[future] = step
+
+                    # Use as_completed() so results are processed as each future
+                    # finishes rather than blocking on each one in submission order.
+                    for future in as_completed(futures):
+                        step = futures[future]
+                        try:
+                            step_result = future.result()
+                        except _LLMCircuitBreakerError:
+                            # Circuit breaker: abort the entire workflow immediately.
+                            # The `with` block will cancel pending futures on exit.
+                            raise
+                        except Exception as exc:
+                            # Unexpected exception from thread: record as FAILED_FINAL.
+                            error_type, error_message = sanitize_exception(exc)
+                            logger.error(
+                                "Parallel step %r raised unexpected exception: %s: %s",
+                                step.name,
+                                error_type,
+                                error_message,
+                            )
+                            step_result = StepResult(
+                                step_id=step.name,
+                                status=StepStatus.FAILED_FINAL,
+                                output=None,
+                                attempts=[],
+                                duration_ms=0.0,
+                                timestamp=datetime.now(tz=UTC),
+                            )
+
+                        step_results[step.name] = step_result
+                        completed_names.add(step.name)
+                        if step_result.status == StepStatus.FAILED_FINAL:
+                            failed_names.add(step.name)
+
+                # Phase 4b: Execute one sequential step per loop iteration.
+                # Taking only the first ready sequential step ensures we re-evaluate
+                # the ready set after each sequential step completes, which is correct
+                # for steps that may unlock other steps.
+                if sequential_ready:
+                    step = sequential_ready[0]
+                    step_result = self._execute_step_entry(step)
+                    step_results[step.name] = step_result
+                    completed_names.add(step.name)
+                    if step_result.status == StepStatus.FAILED_FINAL:
+                        failed_names.add(step.name)
+
+        # --- Compute final workflow status ---
+        any_failed = any(r.status == StepStatus.FAILED_FINAL for r in step_results.values())
+        workflow_status = WorkflowStatus.FAILED if any_failed else WorkflowStatus.COMPLETE
+
+        duration_ms = (time.monotonic() - start_time) * 1000.0
+
+        result = WorkflowResult(
+            status=workflow_status,
+            step_results=step_results,
+            final_state=self._state.to_safe_dict(),
+            duration_ms=duration_ms,
+            timestamp=start_timestamp,
+            llm_calls=self._llm_call_count,
+        )
+
+        self._emit_hook("on_workflow_complete", result)
+        return result
+
+    def _execute_step_entry(self, step: Step) -> StepResult:
+        """Dispatch a step to foreach or single-invocation execution.
+
+        This is the single entry point used by both the sequential and concurrent
+        schedulers. It replaces the inline dispatch that previously lived inside
+        the sequential loop.
+
+        Args:
+            step: The step to execute.
+
+        Returns:
+            A StepResult from _execute_foreach or _execute_with_retries.
+        """
+        if step.config.foreach is not None:
+            return self._execute_foreach(step)
+        return self._execute_with_retries(step)
+
+    def _effective_concurrency(self, graph: TaskGraph) -> int:
+        """Calculate the effective ThreadPoolExecutor worker count.
+
+        Bounded by:
+        - The number of parallel steps in the graph (no point in more workers).
+        - self._max_concurrency when set by the caller.
+        - A hard cap of 32 to prevent resource exhaustion on large graphs.
+
+        Args:
+            graph: The TaskGraph about to be executed.
+
+        Returns:
+            A positive integer worker count (minimum 1).
+        """
+        parallel_count = sum(1 for s in graph.steps if s.config.parallel)
+        candidates = [parallel_count, 32]
+        if self._max_concurrency is not None:
+            candidates.append(self._max_concurrency)
+        return max(1, min(candidates))
 
     # ------------------------------------------------------------------
     # Private execution methods
@@ -1055,23 +1247,26 @@ class StepExecutor:
         """Safely call *method_name* on every registered hook.
 
         Hook exceptions are caught and logged but never propagated — hooks must
-        not crash the executor.
+        not crash the executor. Thread-safe: protected by _hook_lock so that
+        concurrent steps do not interleave their hook calls and produce
+        garbled output in hook implementations.
 
         Args:
             method_name: Name of the ExecutorHooks method to call.
             *args: Positional arguments to pass to the hook method.
             **kwargs: Keyword arguments to pass to the hook method.
         """
-        for hook in self._hooks:
-            try:
-                method = getattr(hook, method_name)
-                method(*args, **kwargs)
-            except Exception:  # noqa: BLE001
-                logger.exception(
-                    "Hook %r raised an exception in %s; ignoring.",
-                    type(hook).__name__,
-                    method_name,
-                )
+        with self._hook_lock:
+            for hook in self._hooks:
+                try:
+                    method = getattr(hook, method_name)
+                    method(*args, **kwargs)
+                except Exception:  # noqa: BLE001
+                    logger.exception(
+                        "Hook %r raised an exception in %s; ignoring.",
+                        type(hook).__name__,
+                        method_name,
+                    )
 
     def _validate_contract(
         self,

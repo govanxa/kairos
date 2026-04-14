@@ -129,6 +129,27 @@ workflow = Workflow(
 result = workflow.run({"industry": "fintech"})
 ```
 
+### Concurrent Step Execution
+When sibling steps have no dependency on each other, run them in parallel:
+
+```python
+from kairos import Workflow, Step
+
+workflow = Workflow(
+    name="concurrent_example",
+    steps=[
+        Step("fetch_data", fetch_action),
+        Step("analyze_a", analyze_a, depends_on=["fetch_data"], parallel=True),
+        Step("analyze_b", analyze_b, depends_on=["fetch_data"], parallel=True),
+        Step("combine", combine_results, depends_on=["analyze_a", "analyze_b"]),
+    ],
+    max_concurrency=4,
+)
+result = workflow.run({"query": "market analysis"})
+```
+
+Steps with `parallel=True` and all dependencies satisfied run concurrently in a `ThreadPoolExecutor`. The `max_concurrency` parameter caps the worker count. Default behavior (`parallel=False`) is unchanged -- existing workflows work identically.
+
 ### Model-Agnostic
 Kairos doesn't care which LLM powers your steps. Any callable that accepts a `StepContext` works — plain functions, API calls, local models, or no LLM at all.
 
@@ -303,11 +324,11 @@ Kairos is built as a single MVP phase combining the Core Engine and Validation L
 | Module | Status |
 |---|---|
 | Model Adapters (Claude, OpenAI, Gemini) | Done |
-| Concurrent step execution | Planned |
+| Concurrent step execution | Done |
 | Observability (RunLogger, CLI, Dashboard) | Planned |
 | Plugin System | Planned |
 
-1,062 tests passing, 98% coverage across 17 source files.
+1,121 tests passing, 98% coverage across 17 source files.
 
 ---
 

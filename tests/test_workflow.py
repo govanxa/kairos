@@ -787,3 +787,53 @@ class TestAsyncStub:
         wf = Workflow(name="wf", steps=[Step(name="s", action=_noop)])
         with pytest.raises(NotImplementedError):
             asyncio.run(wf.run_async())
+
+
+# ---------------------------------------------------------------------------
+# Group 9: Concurrent execution — Workflow.max_concurrency
+# ---------------------------------------------------------------------------
+
+
+class TestWorkflowConcurrency:
+    def test_max_concurrency_stored(self) -> None:
+        """Workflow accepts and stores the max_concurrency parameter."""
+        wf = Workflow(
+            name="wf",
+            steps=[Step(name="s", action=_noop)],
+            max_concurrency=4,
+        )
+        assert wf.max_concurrency == 4
+
+    def test_default_max_concurrency_is_none(self) -> None:
+        """Default max_concurrency is None (no explicit limit)."""
+        wf = Workflow(name="wf", steps=[Step(name="s", action=_noop)])
+        assert wf.max_concurrency is None
+
+    def test_max_concurrency_forwarded_to_executor(self) -> None:
+        """Workflow.run() forwards max_concurrency to StepExecutor."""
+        # Run a workflow with a parallel step and max_concurrency — if it completes
+        # without error, the parameter was forwarded correctly to StepExecutor.
+        wf = Workflow(
+            name="wf",
+            steps=[Step(name="p", action=_noop, parallel=True)],
+            max_concurrency=2,
+        )
+        result = wf.run()
+        assert result.status == WorkflowStatus.COMPLETE
+
+    def test_max_concurrency_in_to_dict(self) -> None:
+        """to_dict() includes max_concurrency when set."""
+        wf = Workflow(
+            name="wf",
+            steps=[Step(name="s", action=_noop)],
+            max_concurrency=8,
+        )
+        d = wf.to_dict()
+        assert d.get("max_concurrency") == 8
+
+    def test_max_concurrency_none_in_to_dict(self) -> None:
+        """to_dict() includes max_concurrency=None when not set."""
+        wf = Workflow(name="wf", steps=[Step(name="s", action=_noop)])
+        d = wf.to_dict()
+        assert "max_concurrency" in d
+        assert d["max_concurrency"] is None

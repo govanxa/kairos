@@ -376,6 +376,62 @@ class TaskGraph:
         self.get_step(name)  # validate existence, raises PlanError if missing
         return [step for step in self.steps if name in step.depends_on]
 
+    def get_ready_steps(self, completed: set[str], failed: set[str]) -> list[Step]:
+        """Return steps whose dependencies are all completed and none have failed.
+
+        A step is "ready" when:
+        - It is not already processed (neither in completed nor failed).
+        - All of its dependencies are in completed.
+        - None of its dependencies are in failed.
+
+        Steps are returned in the same order they appear in self.steps (insertion
+        order), which provides deterministic scheduling.
+
+        Args:
+            completed: Set of step names that have completed successfully.
+            failed: Set of step names that have failed (or been cascade-skipped).
+
+        Returns:
+            Ordered list of Step objects that are ready to execute.
+        """
+        processed = completed | failed
+        ready: list[Step] = []
+        for step in self.steps:
+            if step.name in processed:
+                continue
+            deps = set(step.depends_on)
+            if deps <= completed and not (deps & failed):
+                ready.append(step)
+        return ready
+
+    def get_cascade_skip_steps(self, failed: set[str], completed: set[str]) -> list[Step]:
+        """Return steps that should be cascade-skipped because a dependency has failed.
+
+        A step is "cascade-skippable" when:
+        - It is not already processed (neither in completed nor failed).
+        - At least one of its direct dependencies is in the failed set.
+
+        Note: this only returns *direct* dependency failures. For transitive
+        cascading (A fails → B skipped → C skippable because B is now in
+        failed), the caller must add cascade-skipped steps to the failed set
+        and call this method again in a loop.
+
+        Args:
+            failed: Set of step names that have failed or been cascade-skipped.
+            completed: Set of step names that have completed successfully.
+
+        Returns:
+            List of Step objects that should be cascade-skipped in this round.
+        """
+        processed = completed | failed
+        skippable: list[Step] = []
+        for step in self.steps:
+            if step.name in processed:
+                continue
+            if any(dep in failed for dep in step.depends_on):
+                skippable.append(step)
+        return skippable
+
     # ------------------------------------------------------------------
     # Serialization
     # ------------------------------------------------------------------

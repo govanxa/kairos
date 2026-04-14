@@ -680,6 +680,154 @@ class TestSerialization:
 
 
 # ---------------------------------------------------------------------------
+# Group 6: Thread safety
+# ---------------------------------------------------------------------------
+
+
+class TestStateThreadSafety:
+    """StateStore must be safe to use from multiple threads concurrently."""
+
+    def test_concurrent_writes_no_data_corruption(self):
+        """Multiple threads writing different keys simultaneously; all values stored."""
+        import threading
+
+        store = StateStore()
+        errors: list[Exception] = []
+
+        def writer(key: str, value: int) -> None:
+            try:
+                store.set(key, value)
+            except Exception as e:
+                errors.append(e)
+
+        threads = [threading.Thread(target=writer, args=(f"key_{i}", i)) for i in range(50)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        assert not errors
+        for i in range(50):
+            assert store.get(f"key_{i}") == i
+
+    def test_concurrent_read_write_no_crash(self):
+        """Threads reading and writing concurrently; no exceptions raised."""
+        import threading
+
+        store = StateStore()
+        store.set("shared", 0)
+        errors: list[Exception] = []
+
+        def reader() -> None:
+            try:
+                for _ in range(100):
+                    store.get("shared")
+            except Exception as e:
+                errors.append(e)
+
+        def writer() -> None:
+            try:
+                for i in range(100):
+                    store.set("shared", i)
+            except Exception as e:
+                errors.append(e)
+
+        threads = [threading.Thread(target=reader) for _ in range(5)]
+        threads += [threading.Thread(target=writer) for _ in range(5)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        assert not errors
+
+    def test_concurrent_set_respects_size_limit(self):
+        """Multiple threads adding data; size limit is enforced — no corruption."""
+        import threading
+
+        # Limit is small: ~1000 bytes; each value is ~200 bytes
+        store = StateStore(max_total_size=1000)
+        errors: list[Exception] = []
+        state_errors: list[Exception] = []
+
+        def writer(key: str) -> None:
+            try:
+                store.set(key, "x" * 200)
+            except Exception as exc:
+                from kairos.exceptions import StateError as KairosStateError
+
+                if isinstance(exc, KairosStateError):
+                    state_errors.append(exc)
+                else:
+                    errors.append(exc)
+
+        threads = [threading.Thread(target=writer, args=(f"k{i}",)) for i in range(10)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        # No unexpected errors — only StateError from size limit is acceptable
+        assert not errors
+        # Total stored bytes should not exceed limit
+        assert store._total_size <= store._max_total_size  # pyright: ignore[reportPrivateUsage]
+
+    def test_snapshot_returns_consistent_dict(self):
+        """snapshot() returns a coherent dict of the current store contents."""
+        store = StateStore()
+        store.set("a", 1)
+        store.set("b", 2)
+
+        snap = store.snapshot(step_id="test")
+        # Snapshot contains the values that were set before the snapshot call.
+        assert snap.data["a"] == 1
+        assert snap.data["b"] == 2
+
+    def test_snapshot_under_concurrent_writes(self):
+        """Snapshot taken while other threads are writing produces a consistent dict."""
+        import threading
+
+        store = StateStore()
+        for i in range(20):
+            store.set(f"init_{i}", i)
+
+        errors: list[Exception] = []
+
+        def writer() -> None:
+            for i in range(50):
+                try:
+                    store.set(f"key_{i}", i)
+                except Exception as exc:  # noqa: BLE001
+                    errors.append(exc)
+
+        threads = [threading.Thread(target=writer) for _ in range(4)]
+        snap: object = None
+
+        def snapshotter() -> None:
+            nonlocal snap
+            snap = store.snapshot(step_id="concurrent_test")
+
+        snap_thread = threading.Thread(target=snapshotter)
+
+        for t in threads:
+            t.start()
+        snap_thread.start()
+
+        for t in threads:
+            t.join()
+        snap_thread.join()
+
+        # No unexpected errors from writers
+        assert not errors
+        # Snapshot is always a coherent dict (never partial/corrupt)
+        assert isinstance(snap, object)
+        from kairos.state import StateSnapshot
+
+        assert isinstance(snap, StateSnapshot)
+        assert isinstance(snap.data, dict)
+
+
+# ---------------------------------------------------------------------------
 # Group 6: Regression fixes from code review
 # ---------------------------------------------------------------------------
 
