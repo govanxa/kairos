@@ -62,6 +62,7 @@ def research_topic(ctx: StepContext) -> dict[str, Any]:
         f"Focus on why it matters for AI agent security.",
         max_tokens=300,
     )
+    ctx.increment_llm_calls()  # Track LLM call for circuit breaker
 
     return {
         "topic": topic,
@@ -84,6 +85,7 @@ def synthesize(ctx: StepContext) -> dict[str, Any]:
         f"Write a 3-sentence executive summary of the key themes.",
         max_tokens=400,
     )
+    ctx.increment_llm_calls()
 
     total_research_tokens = sum(r["tokens_used"] for r in research_results)
 

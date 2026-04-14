@@ -331,7 +331,7 @@ Kairos is built as a single MVP phase combining the Core Engine and Validation L
 | Observability (RunLogger, CLI, Dashboard) | Planned |
 | Plugin System | Planned |
 
-1,147 tests passing, 98% coverage across 17 source files.
+1,152 tests passing, 98% coverage across 17 source files.
 
 ---
 

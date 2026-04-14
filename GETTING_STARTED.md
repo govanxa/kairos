@@ -560,6 +560,39 @@ def my_custom_step(ctx: StepContext) -> dict:
 Step(name="analyze", action=my_custom_step)
 ```
 
+### Tracking LLM calls with `ctx.increment_llm_calls()`
+
+Kairos has a built-in **LLM circuit breaker** that aborts a workflow when too many LLM calls are made. This protects against runaway loops and unexpected cost spikes. The limit is set via `max_llm_calls` on the `Workflow` (default: 50).
+
+**When using adapter factories** (`claude()`, `openai_adapter()`, `gemini()`), the call is counted automatically — you don't need to do anything.
+
+**When writing custom step actions** that call an LLM directly, you must count the call yourself by calling `ctx.increment_llm_calls()` after each LLM invocation:
+
+```python
+import anthropic
+from kairos import StepContext
+
+def my_custom_step(ctx: StepContext) -> dict:
+    client = anthropic.Anthropic()
+    response = client.messages.create(
+        model="claude-sonnet-4-20250514",
+        messages=[{"role": "user", "content": f"Analyze: {ctx.inputs['data']}"}],
+    )
+    ctx.increment_llm_calls()  # Track LLM call for circuit breaker
+    return {"result": response.content[0].text}
+```
+
+If you make multiple LLM calls in one step (for example, a research step that calls the API once per sub-topic), call `ctx.increment_llm_calls()` once for each call, or pass a `count` argument:
+
+```python
+# Two LLM calls in one step
+response1 = client.messages.create(...)
+response2 = client.messages.create(...)
+ctx.increment_llm_calls(2)  # Count both at once
+```
+
+If the circuit breaker limit is reached, Kairos raises `ExecutionError("LLM call limit reached")` and the workflow aborts immediately. This is intentional — it prevents a broken retry loop or runaway re-planning from making hundreds of API calls silently.
+
 ---
 
 ## 10. Concurrent Step Execution
@@ -615,6 +648,40 @@ print(f"Output: {result.step_results['combine'].output}")
 - `StateStore` is thread-safe under the hood (`threading.Lock` on all public methods).
 - The LLM circuit breaker and hook emission are also thread-safe.
 - Steps without `parallel=True` always run sequentially, even if siblings are ready.
+
+### When to use `parallel=True`
+
+Use `parallel=True` for steps that are **I/O-bound** and **independent of each other**:
+
+- Calling multiple external APIs in the same workflow (e.g., research step A and research step B both call an LLM with different prompts)
+- Fetching data from multiple sources simultaneously (databases, web APIs, file reads)
+- Running independent analysis branches before a final synthesis step
+
+Do not use `parallel=True` for CPU-bound computation — Python's GIL means threads don't speed up CPU work. And do not use it for steps that depend on each other's output — use `depends_on` to express that relationship.
+
+### Controlling concurrency with `max_concurrency`
+
+`max_concurrency` controls how many parallel steps can run simultaneously. Set it on the `Workflow`:
+
+```python
+workflow = Workflow(
+    name="my-workflow",
+    steps=[...],
+    max_concurrency=4,  # At most 4 parallel steps run at the same time
+)
+```
+
+If `max_concurrency` is not set, Kairos uses `min(parallel_step_count, 32)` automatically. This is sensible for most workflows — you rarely need to tune it unless you're hitting rate limits on an external API and want to throttle concurrency down.
+
+### Hook ordering in concurrent workflows
+
+When parallel steps run simultaneously, lifecycle hooks (`on_step_start`, `on_step_complete`, etc.) fire **in non-deterministic order** — whichever thread finishes first emits its hook first. Each hook call is thread-safe (protected by a lock), but you cannot rely on a specific ordering between concurrent steps.
+
+Sequential steps (those without `parallel=True`) always fire hooks in topological order, as before.
+
+### foreach and concurrency
+
+`foreach` fan-out (where a step runs once per item in a collection) always runs **sequentially** within the step, even when `parallel=True` is set. The `parallel=True` flag controls whether the step itself participates in the concurrent scheduler — it does not parallelize the foreach items within the step. Each foreach item processes in order, one at a time.
 
 ---
 

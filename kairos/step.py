@@ -80,7 +80,11 @@ class StepConfig:
         foreach: State key whose value to fan out over. None means no fan-out.
         foreach_policy: How partial fan-out failures are handled.
         parallel: Whether this step can run in parallel with siblings.
-        max_concurrency: Maximum parallel fan-out instances. Must be >= 1 or None.
+        max_concurrency: Maximum number of worker threads in the workflow-level
+            thread pool for concurrent step execution. Limits how many
+            parallel=True steps run simultaneously. Must be >= 1 or None
+            (None uses min(parallel_step_count, 32)). Note: does not control
+            foreach item parallelism — foreach items run sequentially.
         retry_delay: Base seconds to wait between retries. Must be >= 0.
         retry_backoff: Multiplier applied to retry_delay each attempt. Must be >= 0.
         retry_jitter: Whether to add random jitter to retry delays.

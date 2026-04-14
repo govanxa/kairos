@@ -26,6 +26,7 @@ from kairos import (
     ExecutionError,
     ForeachPolicy,
     PlanError,
+    StateError,
     StateStore,
     Step,
     StepConfig,
@@ -1724,6 +1725,20 @@ class TestConcurrentBoundaryConditions:
         effective = executor._effective_concurrency(_make_graph(steps))  # type: ignore[attr-defined]
         assert effective == 1
 
+    def test_parallel_step_returns_skip(self, state: StateStore) -> None:
+        """A parallel step returning SKIP produces SKIPPED status."""
+        steps = [
+            Step("a", _return_value({"val": "a"}), parallel=True),
+            Step("b", _return_skip, parallel=True),
+        ]
+        executor = StepExecutor(state=state)
+        result = executor.run(_make_graph(steps))
+
+        assert result.status == WorkflowStatus.COMPLETE
+        assert result.step_results["a"].status == StepStatus.COMPLETED
+        assert result.step_results["b"].status == StepStatus.SKIPPED
+        assert result.step_results["b"].output is None
+
 
 # ---------------------------------------------------------------------------
 # Group 14: Concurrent execution — happy paths
@@ -1899,6 +1914,47 @@ class TestConcurrentHappyPaths:
         assert result.step_results["p"].status == StepStatus.FAILED_FINAL
 
     @patch("time.sleep", return_value=None)
+    def test_parallel_step_validation_fails_then_retries(
+        self, _: object, state: StateStore
+    ) -> None:
+        """A parallel step fails output validation once, retries, and succeeds."""
+        from kairos.enums import FailureAction
+        from kairos.failure import FailurePolicy, FailureRouter
+        from kairos.schema import Schema
+        from kairos.validators import StructuralValidator
+
+        call_count = {"n": 0}
+
+        def flaky_action(ctx: StepContext) -> dict[str, object]:
+            call_count["n"] += 1
+            if call_count["n"] == 1:
+                return {"wrong_key": "bad"}
+            return {"result": "good"}
+
+        output_contract = Schema({"result": str})
+        validator = StructuralValidator()
+        step_policy = FailurePolicy(on_validation_fail=FailureAction.RETRY, max_retries=2)
+        router = FailureRouter()
+
+        steps = [
+            Step(
+                "flaky",
+                flaky_action,
+                parallel=True,
+                output_contract=output_contract,
+                failure_policy=step_policy,
+            ),
+            Step("other", _return_value({"ok": True}), parallel=True),
+        ]
+        executor = StepExecutor(state=state, validator=validator, failure_router=router)
+        result = executor.run(_make_graph(steps))
+
+        assert result.status == WorkflowStatus.COMPLETE
+        assert result.step_results["flaky"].status == StepStatus.COMPLETED
+        assert result.step_results["other"].status == StepStatus.COMPLETED
+        assert len(result.step_results["flaky"].attempts) >= 2
+
+    @patch("time.sleep", return_value=None)
     def test_parallel_step_retry_succeeds_under_concurrency(
         self, _: object, state: StateStore
     ) -> None:
@@ -1988,6 +2044,29 @@ class TestConcurrentSecurity:
         # Both increments should have been counted
         assert executor.llm_call_count == 2
 
+    def test_llm_call_count_readable_during_concurrent_execution(self, state: StateStore) -> None:
+        """llm_call_count property safely readable while parallel steps run."""
+
+        def make_action(executor_ref: list[StepExecutor]):
+            def action(ctx: StepContext) -> dict[str, object]:
+                if executor_ref:
+                    executor_ref[0].increment_llm_calls()
+                return {}
+
+            return action
+
+        executor_holder: list[StepExecutor] = []
+        executor = StepExecutor(state=state, max_llm_calls=50)
+        executor_holder.append(executor)
+
+        steps = [
+            Step("a", make_action(executor_holder), parallel=True),
+            Step("b", make_action(executor_holder), parallel=True),
+        ]
+        executor.run(_make_graph(steps))
+
+        assert executor.llm_call_count == 2
+
     def test_final_state_redacted_after_concurrent_run(self, state: StateStore) -> None:
         """WorkflowResult.final_state redacts sensitive keys after concurrent run."""
         state.set("api_key", "sk-secret")
@@ -1999,6 +2078,45 @@ class TestConcurrentSecurity:
 
         assert result.final_state["api_key"] == "[REDACTED]"
         assert result.final_state["normal"] == "visible"
+
+    def test_parallel_scoped_proxy_blocks_unauthorized_read(self, state: StateStore) -> None:
+        """A parallel step with read_keys cannot read keys outside its scope."""
+        raised_errors: list[StateError] = []
+
+        def action(ctx: StepContext) -> dict[str, object]:
+            # "allowed" is in scope — must succeed
+            _ = ctx.state.get("allowed")
+            # "secret" is NOT in read_keys — must raise StateError
+            try:
+                ctx.state.get("secret")
+            except StateError as exc:
+                raised_errors.append(exc)
+            return {}
+
+        state.set("allowed", "yes")
+        state.set("secret", "no")
+        steps = [Step("p", action, parallel=True, read_keys=["allowed"])]
+        executor = StepExecutor(state=state)
+        executor.run(_make_graph(steps))
+
+        assert len(raised_errors) == 1
+
+    def test_parallel_scoped_proxy_blocks_unauthorized_write(self, state: StateStore) -> None:
+        """A parallel step with write_keys cannot write outside its scope."""
+        raised_errors: list[StateError] = []
+
+        def action(ctx: StepContext) -> dict[str, object]:
+            try:
+                ctx.state.set("forbidden_key", "value")
+            except StateError as exc:
+                raised_errors.append(exc)
+            return {}
+
+        steps = [Step("p", action, parallel=True, write_keys=["allowed_output"])]
+        executor = StepExecutor(state=state)
+        executor.run(_make_graph(steps))
+
+        assert len(raised_errors) == 1
 
     def test_input_resolution_json_deep_copy_in_parallel(self, state: StateStore) -> None:
         """Concurrent steps get independent deep copies of their inputs."""

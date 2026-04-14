@@ -328,10 +328,14 @@ class StepExecutor:
     def llm_call_count(self) -> int:
         """Current number of LLM calls made during this run.
 
+        Thread-safe: protected by _llm_call_lock so reads are consistent
+        with concurrent increments happening in parallel steps.
+
         Returns:
             The accumulated LLM call count.
         """
-        return self._llm_call_count
+        with self._llm_call_lock:
+            return self._llm_call_count
 
     def increment_llm_calls(self, count: int = 1) -> None:
         """Increment the LLM call counter, raising ExecutionError at the limit.

@@ -93,6 +93,7 @@ def gather_context(ctx: StepContext) -> dict[str, Any]:
         f"In 2-3 sentences, describe the current state of: {topic}",
         max_tokens=200,
     )
+    ctx.increment_llm_calls()  # Track LLM call for circuit breaker
 
     return {
         "context": response.text,
@@ -126,6 +127,7 @@ def analyze_risk(ctx: StepContext) -> dict[str, Any]:
         f"Based on this context:\n{context}\n\nProvide a security risk analysis. Be concise.",
         max_tokens=300,
     )
+    ctx.increment_llm_calls()
 
     if attempt == 1:
         # First attempt: return UPPERCASE risk_level — validation will reject it
@@ -160,6 +162,7 @@ def write_report(ctx: StepContext) -> dict[str, Any]:
         f"Recommendation: {analysis['recommendation']}",
         max_tokens=400,
     )
+    ctx.increment_llm_calls()
 
     return {
         "report": response.text,
