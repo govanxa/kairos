@@ -378,7 +378,7 @@ if __name__ == "__main__":
         label = name.replace("eval_", "").upper()
         print(f"\n  [{label}]")
         print(f"  Verdict: {output['verdict']}  |  Risk: {output['risk_score']}/10")
-        print(f"  {output['reasoning'][:120]}")
+        print(f"  {output['reasoning']}")
 
     # --- Final recommendation ---
     rec = cast(dict[str, Any], result.step_results["recommend"].output)
