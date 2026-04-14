@@ -293,8 +293,6 @@ Kairos is built as a single MVP phase combining the Core Engine and Validation L
 | `executor+validation` | Done |
 | `workflow.py` (integration) | Done |
 
-893 tests passing, 97% coverage across 1761 statements in 12 core source files.
-
 **Post-MVP — Ecosystem Phase**
 
 | Module | Status |
@@ -304,7 +302,7 @@ Kairos is built as a single MVP phase combining the Core Engine and Validation L
 | Observability (RunLogger, CLI, Dashboard) | Planned |
 | Plugin System | Planned |
 
-1,007 total tests (including adapters), 99% adapter coverage.
+1,029 tests passing, 98% coverage across 1,960 statements in 16 source files.
 
 ---
 
