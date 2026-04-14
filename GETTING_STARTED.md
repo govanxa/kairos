@@ -689,7 +689,7 @@ Sequential steps (those without `parallel=True`) always fire hooks in topologica
 
 Kairos has a built-in **Run Logger** that captures every workflow event as structured, machine-readable data. It subscribes to the executor's lifecycle hooks and dispatches events to pluggable sinks.
 
-> **Try it now:** Run `py examples/run_logger_demo.py` for a full interactive demo showing all 4 sinks, verbosity levels, sensitive key redaction, and RunLog inspection.
+> **Try it now:** Run `py examples/run_logger.py` for a full interactive demo showing all 4 sinks, verbosity levels, sensitive key redaction, and RunLog inspection.
 
 ### Basic setup
 
