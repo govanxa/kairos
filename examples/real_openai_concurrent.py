@@ -389,7 +389,6 @@ if __name__ == "__main__":
     print("=" * 55)
     print(f"\n{rec['summary']}")
     print(f"\nTotal tokens: {rec.get('total_tokens', 'N/A')}")
-    print(f"LLM calls tracked: {result.llm_calls}")
 
     assert result.status == WorkflowStatus.COMPLETE
     print("\nDone.")
