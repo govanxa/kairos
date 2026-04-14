@@ -874,3 +874,114 @@ class TestSkipSentinel:
     def test_new_instance_is_same_object(self) -> None:
         new_skip = _SkipSentinel()
         assert new_skip is SKIP
+
+
+# ===========================================================================
+# Group 7 — StepContext.increment_llm_calls()
+# ===========================================================================
+
+
+class TestStepContextIncrementLLMCalls:
+    """increment_llm_calls() participates in the LLM circuit breaker."""
+
+    def test_increment_with_no_callback_is_noop(self) -> None:
+        """StepContext without callback silently no-ops."""
+        store = StateStore()
+        ctx = StepContext(state=store, inputs={})
+        # Must not raise
+        ctx.increment_llm_calls()
+        ctx.increment_llm_calls(5)
+
+    def test_callback_receives_correct_count(self) -> None:
+        """Callback invoked with the exact count argument."""
+        store = StateStore()
+        received: list[int] = []
+
+        def cb(count: int) -> None:
+            received.append(count)
+
+        ctx = StepContext(state=store, inputs={}, _llm_call_callback=cb)
+        ctx.increment_llm_calls(3)
+        assert received == [3]
+
+    def test_callback_default_count_is_1(self) -> None:
+        """Default count is 1 when not specified."""
+        store = StateStore()
+        received: list[int] = []
+
+        def cb(count: int) -> None:
+            received.append(count)
+
+        ctx = StepContext(state=store, inputs={}, _llm_call_callback=cb)
+        ctx.increment_llm_calls()
+        assert received == [1]
+
+    def test_callback_exception_propagates(self) -> None:
+        """If callback raises, exception propagates to step action."""
+        store = StateStore()
+
+        def cb(count: int) -> None:
+            raise RuntimeError("circuit breaker triggered")
+
+        ctx = StepContext(state=store, inputs={}, _llm_call_callback=cb)
+        with pytest.raises(RuntimeError, match="circuit breaker triggered"):
+            ctx.increment_llm_calls()
+
+    def test_multiple_increments_each_invoke_callback(self) -> None:
+        """Multiple calls each invoke the callback."""
+        store = StateStore()
+        call_counts: list[int] = []
+
+        def cb(count: int) -> None:
+            call_counts.append(count)
+
+        ctx = StepContext(state=store, inputs={}, _llm_call_callback=cb)
+        ctx.increment_llm_calls(1)
+        ctx.increment_llm_calls(2)
+        ctx.increment_llm_calls(3)
+        assert call_counts == [1, 2, 3]
+
+    def test_existing_construction_without_callback_works(self) -> None:
+        """StepContext without _llm_call_callback defaults to None."""
+        store = StateStore()
+        ctx = StepContext(state=store, inputs={})
+        assert ctx._llm_call_callback is None  # pyright: ignore[reportPrivateUsage]
+
+    def test_callback_not_in_repr(self) -> None:
+        """_llm_call_callback excluded from repr."""
+        store = StateStore()
+
+        def cb(count: int) -> None:
+            pass
+
+        ctx = StepContext(state=store, inputs={}, _llm_call_callback=cb)
+        r = repr(ctx)
+        assert "_llm_call_callback" not in r
+        assert "cb" not in r
+
+    def test_negative_count_rejected_without_callback(self) -> None:
+        """Negative count raises ConfigError even without a callback."""
+        store = StateStore()
+        ctx = StepContext(state=store, inputs={})
+        with pytest.raises(ConfigError, match="must be >= 1"):
+            ctx.increment_llm_calls(-1)
+
+    def test_zero_count_rejected_without_callback(self) -> None:
+        """Zero count raises ConfigError even without a callback."""
+        store = StateStore()
+        ctx = StepContext(state=store, inputs={})
+        with pytest.raises(ConfigError, match="must be >= 1"):
+            ctx.increment_llm_calls(0)
+
+    def test_callback_not_in_equality(self) -> None:
+        """Two contexts equal regardless of callback identity."""
+        store = StateStore()
+        received: list[int] = []
+
+        def cb(count: int) -> None:
+            received.append(count)
+
+        ctx1 = StepContext(state=store, inputs={})
+        ctx2 = StepContext(state=store, inputs={}, _llm_call_callback=cb)
+        # Both have same structural fields — they should compare equal
+        assert ctx1 == ctx2

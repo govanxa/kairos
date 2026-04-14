@@ -315,6 +315,7 @@ def claude(
             prompt += retry_info
 
         response = adapter.call(prompt)
+        ctx.increment_llm_calls()  # participate in the circuit breaker
         return response.to_dict()
 
     return _action

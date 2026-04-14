@@ -730,3 +730,73 @@ class TestClaudeFactory:
         actual_prompt = create_mock.call_args.kwargs["messages"][0]["content"]
         # An empty dict is falsy — should NOT append any RETRY CONTEXT block
         assert "[RETRY CONTEXT]" not in actual_prompt
+
+
+# ---------------------------------------------------------------------------
+# Group 6: LLM call tracking via StepContext (Step 4)
+# ---------------------------------------------------------------------------
+
+
+class TestFactoryLLMCallTracking:
+    """Factory closure calls ctx.increment_llm_calls() after a successful adapter.call()."""
+
+    def test_factory_action_calls_increment_llm_calls(self, env_api_key: None) -> None:
+        """Factory closure calls ctx.increment_llm_calls() after adapter.call()."""
+        mock_ant = _make_mock_anthropic()
+        increment_calls: list[int] = []
+
+        with patch("kairos.adapters.claude.anthropic", mock_ant):
+            from kairos.adapters.claude import claude
+
+            action = claude("Analyze: {data}")
+            state_mock = MagicMock()
+            ctx = StepContext(
+                state=state_mock,
+                inputs={"data": "test input"},
+                _llm_call_callback=lambda count: increment_calls.append(count),
+            )
+            action(ctx)
+
+        # Must have called increment_llm_calls once with count=1
+        assert increment_calls == [1]
+
+    def test_factory_action_does_not_increment_on_failure(self, env_api_key: None) -> None:
+        """If adapter.call() raises, no increment is made."""
+        mock_ant = _make_mock_anthropic()
+        mock_ant.Anthropic.return_value.messages.create.side_effect = Exception("API error")
+        increment_calls: list[int] = []
+
+        with patch("kairos.adapters.claude.anthropic", mock_ant):
+            from kairos.adapters.claude import claude
+
+            action = claude("Analyze: {data}")
+            state_mock = MagicMock()
+            ctx = StepContext(
+                state=state_mock,
+                inputs={"data": "test input"},
+                _llm_call_callback=lambda count: increment_calls.append(count),
+            )
+            with pytest.raises(ExecutionError):
+                action(ctx)
+
+        # No increment should have happened because the call failed before returning
+        assert increment_calls == []
+
+    def test_factory_action_works_without_callback(self, env_api_key: None) -> None:
+        """Factory works even if _llm_call_callback is None (backward compat)."""
+        mock_ant = _make_mock_anthropic()
+
+        with patch("kairos.adapters.claude.anthropic", mock_ant):
+            from kairos.adapters.claude import claude
+
+            action = claude("Analyze: {data}")
+            state_mock = MagicMock()
+            # Standard StepContext without callback — no _llm_call_callback
+            ctx = StepContext(
+                state=state_mock,
+                inputs={"data": "test input"},
+            )
+            # Must not raise
+            result = action(ctx)
+
+        assert isinstance(result, dict)

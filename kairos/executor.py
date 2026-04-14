@@ -346,6 +346,8 @@ class StepExecutor:
         Raises:
             ExecutionError: When the new total would reach or exceed max_llm_calls.
         """
+        if count < 1:
+            raise ConfigError(f"increment_llm_calls count must be >= 1, got {count}")
         with self._llm_call_lock:
             self._llm_call_count += count
             if self._llm_call_count > self._max_llm_calls:
@@ -1161,6 +1163,7 @@ class StepExecutor:
             retry_context=retry_context,
             step_id=step.name,
             attempt=attempt,
+            _llm_call_callback=lambda count: self.increment_llm_calls(count),
         )
 
     def _resolve_inputs(self, step: Step) -> dict[str, object]:

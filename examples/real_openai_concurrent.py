@@ -85,6 +85,7 @@ def describe_product(ctx: StepContext) -> dict[str, Any]:
         f"who it's for, and how it's different from existing solutions.",
         max_tokens=200,
     )
+    ctx.increment_llm_calls()
 
     return {
         "description": response.text,
@@ -120,6 +121,7 @@ def _make_evaluator(role: str, focus: str) -> Callable[[StepContext], dict[str, 
             f'"risk_score": 1-10 where 1=minimal risk and 10=critical risk}}',
             max_tokens=300,
         )
+        ctx.increment_llm_calls()
 
         # Parse the JSON response — fall back to structured extraction if needed
         import json
@@ -194,6 +196,7 @@ def recommend(ctx: StepContext) -> dict[str, Any]:
         f'"summary": "3-4 sentence executive summary of the decision"}}',
         max_tokens=300,
     )
+    ctx.increment_llm_calls()
 
     import json
 
@@ -333,6 +336,7 @@ if __name__ == "__main__":
     print(f"Status: {result.status.value}")
     print(f"Kairos duration: {result.duration_ms:.0f}ms")
     print(f"Wall-clock time: {wall_seconds:.1f}s")
+    print(f"LLM calls tracked: {result.llm_calls}")
     print()
 
     # --- Per-step timing ---

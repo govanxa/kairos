@@ -22,7 +22,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 
 # Avoid a circular import: state.py already imports from exceptions.py.
@@ -150,6 +150,31 @@ class StepContext:
     retry_context: dict[str, object] | None = None
     step_id: str = ""
     attempt: int = 1
+    _llm_call_callback: Callable[[int], None] | None = field(
+        default=None, repr=False, compare=False
+    )
+
+    def increment_llm_calls(self, count: int = 1) -> None:
+        """Notify the executor of LLM calls made inside this step action.
+
+        Step actions call this method each time they invoke a language model to
+        participate in the circuit breaker. If the callback raises (e.g. because
+        the limit is exceeded), the exception propagates directly to the caller.
+
+        When no callback is injected (e.g. in tests that construct StepContext
+        directly), this method validates count then no-ops so existing code
+        continues to work without modification.
+
+        Args:
+            count: Number of LLM calls to report. Must be >= 1. Defaults to 1.
+
+        Raises:
+            ConfigError: When count is less than 1.
+        """
+        if count < 1:
+            raise ConfigError(f"increment_llm_calls count must be >= 1, got {count}")
+        if self._llm_call_callback is not None:
+            self._llm_call_callback(count)
 
 
 # ---------------------------------------------------------------------------
