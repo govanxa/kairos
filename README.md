@@ -153,6 +153,30 @@ result = workflow.run({"query": "market analysis"})
 
 Steps with `parallel=True` and all dependencies satisfied run concurrently in a `ThreadPoolExecutor`. The `max_concurrency` parameter caps the worker count. Default behavior (`parallel=False`) is unchanged -- existing workflows work identically.
 
+### Structured Run Logging
+Capture every workflow event as structured, machine-readable data. Plug in the sinks you need:
+
+```python
+from kairos import Workflow, Step, RunLogger, ConsoleSink, JSONLinesSink, LogLevel
+
+logger = RunLogger(
+    verbosity=LogLevel.NORMAL,
+    sinks=[ConsoleSink(), JSONLinesSink("runs/output.jsonl")],
+    sensitive_keys=["*api_key*", "*password*"],
+)
+
+workflow = Workflow(
+    name="logged-workflow",
+    steps=[Step(name="analyze", action=my_fn)],
+    hooks=[logger],
+)
+
+result = workflow.run({"data": "input"})
+run_log = logger.get_log()  # Complete structured record of the run
+```
+
+Three verbosity levels (MINIMAL, NORMAL, VERBOSE) control how much detail is captured. Sensitive keys are automatically redacted before events reach any sink.
+
 ### Model-Agnostic
 Kairos doesn't care which LLM powers your steps. Any callable that accepts a `StepContext` works — plain functions, API calls, local models, or no LLM at all.
 
@@ -298,6 +322,7 @@ Kairos is built as a single MVP phase combining the Core Engine and Validation L
 | **Schema Registry** | Input/output contracts per step (Kairos DSL, Pydantic, JSON Schema) |
 | **Validation Engine** | Structural and semantic validation between steps |
 | **Failure Router** | Policy-driven recovery: retry, re-plan, skip, abort |
+| **Run Logger** | Structured event logging with pluggable sinks and verbosity levels |
 
 ---
 
@@ -322,16 +347,18 @@ Kairos is built as a single MVP phase combining the Core Engine and Validation L
 | `executor+validation` | Done |
 | `workflow.py` (integration) | Done |
 
-**Post-MVP — Ecosystem Phase**
+**Post-MVP — Ecosystem and Observability**
 
 | Module | Status |
 |---|---|
 | Model Adapters (Claude, OpenAI, Gemini) | Done |
 | Concurrent step execution | Done |
-| Observability (RunLogger, CLI, Dashboard) | Planned |
+| Run Logger (structured logging, pluggable sinks) | Done |
+| CLI Runner | Planned |
+| Dashboard | Planned |
 | Plugin System | Planned |
 
-1,152 tests passing, 98% coverage across 17 source files.
+1,248 tests passing, 98% coverage across 18 source files.
 
 ---
 
