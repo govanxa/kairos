@@ -315,14 +315,17 @@ if __name__ == "__main__":
     print("  recommend")
     print()
 
+    product = (
+        "An AI-powered code review tool that detects security "
+        "vulnerabilities in pull requests using static analysis and LLM reasoning"
+    )
+
+    print(f"Product: {product}")
+    print()
+
     wall_start = time.perf_counter()
 
-    result = workflow.run(
-        {
-            "product": "An AI-powered code review tool that detects security "
-            "vulnerabilities in pull requests using static analysis and LLM reasoning"
-        }
-    )
+    result = workflow.run({"product": product})
 
     wall_end = time.perf_counter()
     wall_seconds = wall_end - wall_start

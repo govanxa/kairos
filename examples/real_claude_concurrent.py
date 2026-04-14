@@ -265,9 +265,14 @@ if __name__ == "__main__":
     print("  synthesize")
     print()
 
+    query = "AI agent orchestration frameworks"
+
+    print(f"Query: {query}")
+    print()
+
     wall_start = time.perf_counter()
 
-    result = workflow.run({"query": "AI agent orchestration frameworks"})
+    result = workflow.run({"query": query})
 
     wall_end = time.perf_counter()
     wall_seconds = wall_end - wall_start
