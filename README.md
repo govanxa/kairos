@@ -382,7 +382,7 @@ pip install -e ".[dev]"
 | `examples/real_openai.py` | Real OpenAI API calls — validation failure on first attempt, automatic retry and recovery |
 | `examples/real_claude_concurrent.py` | **Concurrent execution** — 3 parallel Claude API calls + synthesis, with speedup measurement |
 | `examples/real_openai_concurrent.py` | **Concurrent execution** — 4 parallel OpenAI evaluation tracks + go/no-go recommendation |
-| `examples/run_logger_demo.py` | **Run Logger** — all 4 sinks, verbosity levels, sensitive key redaction, RunLog inspection (no API keys needed) |
+| `examples/run_logger.py` | **Run Logger** — all 4 sinks, verbosity levels, sensitive key redaction, RunLog inspection (no API keys needed) |
 
 ---
 
