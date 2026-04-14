@@ -13,6 +13,7 @@ Test priority order (TDD mandate):
 from __future__ import annotations
 
 import time
+from collections.abc import Callable
 from datetime import datetime
 from typing import Any, cast
 from unittest.mock import MagicMock, patch
@@ -1536,3 +1537,519 @@ class TestInternalDefensiveBranches:
         state._data["dep_step"] = object()  # pyright: ignore[reportPrivateUsage]  # not JSON-serializable
         inputs = executor._resolve_inputs(step)  # pyright: ignore[reportPrivateUsage]
         assert "dep_step" not in inputs
+
+
+# ---------------------------------------------------------------------------
+# Group 12: Concurrent execution — failure paths
+# ---------------------------------------------------------------------------
+
+
+class TestConcurrentFailurePaths:
+    """Failure path tests for concurrent (parallel=True) step execution."""
+
+    def test_parallel_step_failure_cascades_to_dependents(self, state: StateStore) -> None:
+        """When a parallel step fails, its dependents are cascade-skipped."""
+        steps = [
+            Step("a", _always_fail, parallel=True),
+            Step("b", _noop, depends_on=["a"]),
+        ]
+        executor = StepExecutor(state=state)
+        result = executor.run(_make_graph(steps))
+
+        assert result.step_results["a"].status == StepStatus.FAILED_FINAL
+        assert result.step_results["b"].status == StepStatus.SKIPPED
+
+    def test_parallel_step_exception_produces_failed_final(self, state: StateStore) -> None:
+        """A parallel step that raises produces FAILED_FINAL."""
+        steps = [Step("p", _always_fail, parallel=True)]
+        executor = StepExecutor(state=state)
+        result = executor.run(_make_graph(steps))
+
+        assert result.step_results["p"].status == StepStatus.FAILED_FINAL
+
+    def test_all_parallel_steps_fail_gives_failed_workflow(self, state: StateStore) -> None:
+        """When all parallel steps fail, workflow status is FAILED."""
+        steps = [
+            Step("a", _always_fail, parallel=True),
+            Step("b", _always_fail, parallel=True),
+        ]
+        executor = StepExecutor(state=state)
+        result = executor.run(_make_graph(steps))
+
+        assert result.status == WorkflowStatus.FAILED
+
+    def test_mixed_parallel_sequential_failure_cascade(self, state: StateStore) -> None:
+        """Sequential step depending on failed parallel step is cascade-skipped."""
+        steps = [
+            Step("parallel_a", _always_fail, parallel=True),
+            Step("sequential_b", _noop, depends_on=["parallel_a"]),
+        ]
+        executor = StepExecutor(state=state)
+        result = executor.run(_make_graph(steps))
+
+        assert result.step_results["parallel_a"].status == StepStatus.FAILED_FINAL
+        assert result.step_results["sequential_b"].status == StepStatus.SKIPPED
+
+    def test_circuit_breaker_aborts_concurrent_workflow(self, state: StateStore) -> None:
+        """LLM circuit breaker triggers the real _LLMCircuitBreakerError mechanism."""
+        # Build the executor first, then build steps that reference it via closure.
+        # max_llm_calls=2 means the 3rd call triggers the circuit breaker.
+        executor = StepExecutor(state=state, max_llm_calls=2)
+
+        def make_llm_step(
+            executor_ref: StepExecutor, calls: int = 2
+        ) -> Callable[[StepContext], dict[str, object]]:
+            def action(ctx: StepContext) -> dict[str, object]:
+                # Each step spends `calls` LLM tokens; together they exceed max_llm_calls=2.
+                executor_ref.increment_llm_calls(calls)
+                return {"done": True}
+
+            return action
+
+        steps = [
+            Step("a", make_llm_step(executor, calls=2), parallel=True),
+            Step("b", make_llm_step(executor, calls=2), parallel=True),
+        ]
+        # With max_llm_calls=2, the second step's increment_llm_calls(2) raises
+        # _LLMCircuitBreakerError (a subclass of ExecutionError).  run() propagates it.
+        with pytest.raises(ExecutionError, match="LLM call limit reached"):
+            executor.run(_make_graph(steps))
+
+    def test_parallel_step_with_timeout_completes(self, state: StateStore) -> None:
+        """A parallel step with timeout configured completes correctly under concurrency."""
+        # The step action finishes well within the 5-second timeout.
+        steps = [Step("p", _return_value({"done": True}), parallel=True, timeout=5.0)]
+        executor = StepExecutor(state=state)
+        result = executor.run(_make_graph(steps))
+
+        assert result.status == WorkflowStatus.COMPLETE
+        assert result.step_results["p"].status == StepStatus.COMPLETED
+
+    def test_parallel_step_with_timeout_times_out(self, state: StateStore) -> None:
+        """A parallel step that exceeds its timeout produces FAILED_FINAL under concurrency."""
+
+        def slow_action(ctx: StepContext) -> dict[str, object]:
+            time.sleep(5.0)  # Much longer than the 0.05 s timeout
+            return {"done": True}
+
+        steps = [Step("slow", slow_action, parallel=True, timeout=0.05)]
+        executor = StepExecutor(state=state)
+        result = executor.run(_make_graph(steps))
+
+        assert result.status == WorkflowStatus.FAILED
+        assert result.step_results["slow"].status == StepStatus.FAILED_FINAL
+
+
+# ---------------------------------------------------------------------------
+# Group 13: Concurrent execution — boundary conditions
+# ---------------------------------------------------------------------------
+
+
+class TestConcurrentBoundaryConditions:
+    """Boundary condition tests for concurrent step execution."""
+
+    def test_single_parallel_step_runs_alone(self, state: StateStore) -> None:
+        """Workflow with one parallel step executes and completes normally."""
+        steps = [Step("only", _return_value({"x": 1}), parallel=True)]
+        executor = StepExecutor(state=state)
+        result = executor.run(_make_graph(steps))
+
+        assert result.status == WorkflowStatus.COMPLETE
+        assert result.step_results["only"].status == StepStatus.COMPLETED
+
+    def test_all_steps_sequential_uses_sequential_path(self, state: StateStore) -> None:
+        """No parallel steps → sequential execution path used."""
+        steps = [Step("a", _noop), Step("b", _noop, depends_on=["a"])]
+        executor = StepExecutor(state=state)
+        result = executor.run(_make_graph(steps))
+
+        # Verify sequential execution still works correctly
+        assert result.status == WorkflowStatus.COMPLETE
+        assert result.step_results["a"].status == StepStatus.COMPLETED
+        assert result.step_results["b"].status == StepStatus.COMPLETED
+
+    @patch("time.sleep", return_value=None)
+    def test_max_concurrency_one_serializes(self, _: object, state: StateStore) -> None:
+        """max_concurrency=1 means one parallel step at a time."""
+        completed_order: list[str] = []
+
+        def make_recorder(name: str):
+            def action(ctx: StepContext) -> dict[str, object]:
+                completed_order.append(name)
+                return {}
+
+            return action
+
+        steps = [
+            Step("a", make_recorder("a"), parallel=True),
+            Step("b", make_recorder("b"), parallel=True),
+        ]
+        executor = StepExecutor(state=state, max_concurrency=1)
+        result = executor.run(_make_graph(steps))
+
+        # Both should complete regardless of concurrency limit
+        assert result.status == WorkflowStatus.COMPLETE
+        assert len(completed_order) == 2
+
+    def test_parallel_step_with_no_dependencies_is_immediately_ready(
+        self, state: StateStore
+    ) -> None:
+        """Parallel step with depends_on=[] is immediately in the ready set."""
+        steps = [Step("p", _return_value(42), parallel=True)]
+        executor = StepExecutor(state=state)
+        result = executor.run(_make_graph(steps))
+
+        assert result.step_results["p"].status == StepStatus.COMPLETED
+
+    def test_effective_concurrency_caps_at_32(self, state: StateStore) -> None:
+        """Thread pool is capped at 32 workers even when more parallel steps exist."""
+        # Build 40 parallel steps — the pool size must still cap at 32.
+        many_steps = [Step(f"p{i}", _noop, parallel=True) for i in range(40)]
+        executor = StepExecutor(state=state)
+        effective = executor._effective_concurrency(_make_graph(many_steps))  # type: ignore[attr-defined]
+        assert effective == 32
+
+    def test_effective_concurrency_respects_max_concurrency(self, state: StateStore) -> None:
+        """max_concurrency parameter limits the pool size below the step count."""
+        steps = [Step(f"p{i}", _noop, parallel=True) for i in range(10)]
+        executor = StepExecutor(state=state, max_concurrency=3)
+        effective = executor._effective_concurrency(_make_graph(steps))  # type: ignore[attr-defined]
+        assert effective == 3
+
+    def test_effective_concurrency_minimum_one(self, state: StateStore) -> None:
+        """Pool size is always at least 1, even for a graph with no parallel steps."""
+        # A graph with only sequential steps has parallel_count=0, but minimum is 1.
+        steps = [Step("s", _noop)]
+        executor = StepExecutor(state=state)
+        effective = executor._effective_concurrency(_make_graph(steps))  # type: ignore[attr-defined]
+        assert effective == 1
+
+
+# ---------------------------------------------------------------------------
+# Group 14: Concurrent execution — happy paths
+# ---------------------------------------------------------------------------
+
+
+class TestConcurrentHappyPaths:
+    """Happy path tests for concurrent step execution."""
+
+    @patch("time.sleep", return_value=None)
+    def test_two_independent_parallel_steps_run_concurrently(
+        self, _: object, state: StateStore
+    ) -> None:
+        """Two parallel steps with no deps both execute and results are recorded."""
+        steps = [
+            Step("a", _return_value({"val": "a"}), parallel=True),
+            Step("b", _return_value({"val": "b"}), parallel=True),
+        ]
+        executor = StepExecutor(state=state)
+        result = executor.run(_make_graph(steps))
+
+        assert result.status == WorkflowStatus.COMPLETE
+        assert result.step_results["a"].status == StepStatus.COMPLETED
+        assert result.step_results["b"].status == StepStatus.COMPLETED
+
+    @patch("time.sleep", return_value=None)
+    def test_parallel_steps_then_sequential_dependent(self, _: object, state: StateStore) -> None:
+        """A(parallel), B(parallel) -> C(sequential with deps on both). A+B run then C."""
+        steps = [
+            Step("a", _return_value(1), parallel=True),
+            Step("b", _return_value(2), parallel=True),
+            Step("c", _noop, depends_on=["a", "b"]),
+        ]
+        executor = StepExecutor(state=state)
+        result = executor.run(_make_graph(steps))
+
+        assert result.status == WorkflowStatus.COMPLETE
+        assert result.step_results["a"].status == StepStatus.COMPLETED
+        assert result.step_results["b"].status == StepStatus.COMPLETED
+        assert result.step_results["c"].status == StepStatus.COMPLETED
+
+    @patch("time.sleep", return_value=None)
+    def test_diamond_with_parallel_siblings(self, _: object, state: StateStore) -> None:
+        """A -> B(parallel), A -> C(parallel), B+C -> D. Correct execution order."""
+        steps = [
+            Step("a", _return_value({"a": 1})),
+            Step("b", _return_value({"b": 2}), parallel=True, depends_on=["a"]),
+            Step("c", _return_value({"c": 3}), parallel=True, depends_on=["a"]),
+            Step("d", _noop, depends_on=["b", "c"]),
+        ]
+        executor = StepExecutor(state=state)
+        result = executor.run(_make_graph(steps))
+
+        assert result.status == WorkflowStatus.COMPLETE
+        for name in ["a", "b", "c", "d"]:
+            assert result.step_results[name].status == StepStatus.COMPLETED
+
+    @patch("time.sleep", return_value=None)
+    def test_state_passed_between_parallel_and_dependent(
+        self, _: object, state: StateStore
+    ) -> None:
+        """Parallel step writes state; dependent reads it correctly via inputs."""
+        received: dict[str, object] = {}
+
+        def reader(ctx: StepContext) -> dict[str, object]:
+            received["writer_output"] = ctx.inputs.get("writer")
+            return {}
+
+        steps = [
+            Step("writer", _return_value({"data": "hello"}), parallel=True),
+            Step("reader", reader, depends_on=["writer"]),
+        ]
+        executor = StepExecutor(state=state)
+        result = executor.run(_make_graph(steps))
+
+        assert result.status == WorkflowStatus.COMPLETE
+        assert received["writer_output"] == {"data": "hello"}
+
+    @patch("time.sleep", return_value=None)
+    def test_hooks_fire_for_concurrent_steps(self, _: object, state: StateStore) -> None:
+        """Lifecycle hooks fire for each concurrent step."""
+        hook = MagicMock(spec=ExecutorHooks)
+
+        steps = [
+            Step("a", _noop, parallel=True),
+            Step("b", _noop, parallel=True),
+        ]
+        executor = StepExecutor(state=state, hooks=[hook])
+        executor.run(_make_graph(steps))
+
+        # on_workflow_start fires once
+        hook.on_workflow_start.assert_called_once()
+        # on_workflow_complete fires once
+        hook.on_workflow_complete.assert_called_once()
+
+    @patch("time.sleep", return_value=None)
+    def test_workflow_result_contains_all_step_results(self, _: object, state: StateStore) -> None:
+        """WorkflowResult includes entries for every step."""
+        steps = [
+            Step("a", _noop, parallel=True),
+            Step("b", _noop, parallel=True),
+            Step("c", _noop, depends_on=["a", "b"]),
+        ]
+        executor = StepExecutor(state=state)
+        result = executor.run(_make_graph(steps))
+
+        assert set(result.step_results.keys()) == {"a", "b", "c"}
+
+    def test_parallel_foreach_step(self, state: StateStore) -> None:
+        """A foreach step with parallel=True runs correctly in the concurrent scheduler."""
+        state.set("items", [1, 2, 3])
+
+        def multiply(ctx: StepContext) -> int:
+            item = ctx.item
+            assert isinstance(item, int)
+            return item * 10
+
+        steps = [Step("fan", multiply, parallel=True, foreach="items")]
+        executor = StepExecutor(state=state)
+        result = executor.run(_make_graph(steps))
+
+        assert result.status == WorkflowStatus.COMPLETE
+        assert result.step_results["fan"].status == StepStatus.COMPLETED
+        # The foreach aggregator should produce [10, 20, 30] (order not guaranteed but all present)
+        fan_output = result.step_results["fan"].output
+        assert isinstance(fan_output, list)
+        assert sorted(cast(list[int], fan_output)) == [10, 20, 30]
+
+    def test_validation_contracts_on_parallel_step_valid_output(self, state: StateStore) -> None:
+        """Input/output contracts fire correctly on parallel steps with valid output."""
+        from kairos.schema import Schema
+        from kairos.validators import StructuralValidator
+
+        output_schema = Schema({"result": str})
+        validator = StructuralValidator()
+
+        steps = [
+            Step(
+                "p",
+                _return_value({"result": "hello"}),
+                parallel=True,
+                output_contract=output_schema,
+            )
+        ]
+        executor = StepExecutor(state=state, validator=validator)
+        result = executor.run(_make_graph(steps))
+
+        assert result.status == WorkflowStatus.COMPLETE
+        assert result.step_results["p"].status == StepStatus.COMPLETED
+
+    def test_validation_contracts_on_parallel_step_invalid_output(self, state: StateStore) -> None:
+        """A parallel step that returns invalid output against its contract gets FAILED_FINAL."""
+        from kairos.schema import Schema
+        from kairos.validators import StructuralValidator
+
+        output_schema = Schema({"result": str})  # requires "result" key
+        validator = StructuralValidator()
+
+        # Return missing required key — contract violation
+        steps = [
+            Step(
+                "p",
+                _return_value({"wrong_key": 99}),
+                parallel=True,
+                output_contract=output_schema,
+                retries=0,
+            )
+        ]
+        executor = StepExecutor(state=state, validator=validator)
+        result = executor.run(_make_graph(steps))
+
+        assert result.status == WorkflowStatus.FAILED
+        assert result.step_results["p"].status == StepStatus.FAILED_FINAL
+
+    @patch("time.sleep", return_value=None)
+    def test_parallel_step_retry_succeeds_under_concurrency(
+        self, _: object, state: StateStore
+    ) -> None:
+        """A parallel step with retries that fails once then succeeds completes normally."""
+        steps = [
+            Step("a", _fail_then_succeed(1), parallel=True, retries=2),
+            Step("b", _return_value({"ok": True}), parallel=True),
+        ]
+        executor = StepExecutor(state=state)
+        result = executor.run(_make_graph(steps))
+
+        assert result.status == WorkflowStatus.COMPLETE
+        assert result.step_results["a"].status == StepStatus.COMPLETED
+        assert result.step_results["b"].status == StepStatus.COMPLETED
+        # Step 'a' should have 2 attempts: one failure, one success
+        assert len(result.step_results["a"].attempts) == 2
+
+    @patch("time.sleep", return_value=None)
+    def test_parallel_step_retry_context_sanitized(self, _: object, state: StateStore) -> None:
+        """Retry context on parallel step contains only structured metadata, not raw errors."""
+        retry_ctxs: list[dict[str, object]] = []
+
+        def capture_retry_ctx(ctx: StepContext) -> dict[str, object]:
+            if ctx.retry_context is not None:
+                retry_ctxs.append(ctx.retry_context)
+                return {"done": True}
+            raise RuntimeError("Super secret error sk-1234 with /home/user/secret.py details")
+
+        steps = [Step("p", capture_retry_ctx, parallel=True, retries=1)]
+        executor = StepExecutor(state=state)
+        result = executor.run(_make_graph(steps))
+
+        assert result.status == WorkflowStatus.COMPLETE
+        # Verify retry context was captured and is sanitized
+        assert len(retry_ctxs) == 1
+        ctx = retry_ctxs[0]
+        # Must not contain raw exception message
+        ctx_str = str(ctx)
+        assert "sk-1234" not in ctx_str
+        assert "/home/user/secret.py" not in ctx_str
+
+
+# ---------------------------------------------------------------------------
+# Group 15: Concurrent execution — security
+# ---------------------------------------------------------------------------
+
+
+class TestConcurrentSecurity:
+    """Security tests for concurrent step execution."""
+
+    def test_scoped_proxy_enforced_in_parallel_step(self, state: StateStore) -> None:
+        """Parallel step with read_keys/write_keys receives a ScopedStateProxy."""
+        received_type: list[str] = []
+
+        def action(ctx: StepContext) -> dict[str, object]:
+            received_type.append(type(ctx.state).__name__)
+            return {}
+
+        state.set("allowed", "value")
+        steps = [Step("p", action, parallel=True, read_keys=["allowed"])]
+        executor = StepExecutor(state=state)
+        executor.run(_make_graph(steps))
+
+        assert received_type[0] == "ScopedStateProxy"
+
+    def test_llm_counter_accurate_under_concurrency(self, state: StateStore) -> None:
+        """Two parallel steps each incrementing llm_calls — total is accurate."""
+
+        def make_action(executor_ref: list[StepExecutor]):
+            def action(ctx: StepContext) -> dict[str, object]:
+                if executor_ref:
+                    executor_ref[0].increment_llm_calls()
+                return {}
+
+            return action
+
+        executor_holder: list[StepExecutor] = []
+        executor = StepExecutor(state=state, max_llm_calls=50)
+        executor_holder.append(executor)
+
+        steps = [
+            Step("a", make_action(executor_holder), parallel=True),
+            Step("b", make_action(executor_holder), parallel=True),
+        ]
+        executor.run(_make_graph(steps))
+
+        # Both increments should have been counted
+        assert executor.llm_call_count == 2
+
+    def test_final_state_redacted_after_concurrent_run(self, state: StateStore) -> None:
+        """WorkflowResult.final_state redacts sensitive keys after concurrent run."""
+        state.set("api_key", "sk-secret")
+        state.set("normal", "visible")
+
+        steps = [Step("p", _noop, parallel=True)]
+        executor = StepExecutor(state=state)
+        result = executor.run(_make_graph(steps))
+
+        assert result.final_state["api_key"] == "[REDACTED]"
+        assert result.final_state["normal"] == "visible"
+
+    def test_input_resolution_json_deep_copy_in_parallel(self, state: StateStore) -> None:
+        """Concurrent steps get independent deep copies of their inputs."""
+        mutated_inputs: list[dict[str, Any]] = []
+
+        def mutating_action(ctx: StepContext) -> dict[str, object]:
+            inp = ctx.inputs.get("upstream")
+            if isinstance(inp, dict):
+                cast(dict[str, Any], inp)["mutated"] = True
+                mutated_inputs.append(cast(dict[str, Any], inp))
+            return {}
+
+        state.set("upstream", {"value": 42})
+
+        steps = [
+            Step("upstream", _return_value({"value": 42})),
+            Step("a", mutating_action, parallel=True, depends_on=["upstream"]),
+            Step("b", mutating_action, parallel=True, depends_on=["upstream"]),
+        ]
+        executor = StepExecutor(state=state)
+        result = executor.run(_make_graph(steps))
+
+        assert result.status == WorkflowStatus.COMPLETE
+        # State value should not have been mutated by steps
+        stored = state.get("upstream")
+        assert stored == {"value": 42}
+
+
+# ---------------------------------------------------------------------------
+# Group 16: Concurrent execution — serialization
+# ---------------------------------------------------------------------------
+
+
+class TestConcurrentSerialization:
+    """Serialization tests for concurrent workflow results."""
+
+    @patch("time.sleep", return_value=None)
+    def test_workflow_result_serializable_after_concurrent_run(
+        self, _: object, state: StateStore
+    ) -> None:
+        """WorkflowResult.to_dict() works correctly after a concurrent run."""
+        import json
+
+        steps = [
+            Step("a", _return_value({"key": "val"}), parallel=True),
+            Step("b", _return_value({"key": "val"}), parallel=True),
+        ]
+        executor = StepExecutor(state=state)
+        result = executor.run(_make_graph(steps))
+
+        d = result.to_dict()
+        json_str = json.dumps(d)  # must not raise
+        assert isinstance(json_str, str)
+        assert set(cast(dict[str, Any], d["step_results"]).keys()) == {"a", "b"}

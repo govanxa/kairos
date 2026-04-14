@@ -733,6 +733,152 @@ class TestSerialization:
         restored = TaskGraph.from_dict(graph.to_dict())
         assert restored.get_step("a").config.max_concurrency == 4
 
+
+# ---------------------------------------------------------------------------
+# Group 6: get_ready_steps — concurrent scheduling helper
+# ---------------------------------------------------------------------------
+
+
+class TestGetReadySteps:
+    """Tests for TaskGraph.get_ready_steps(completed, failed)."""
+
+    def test_missing_dependency_not_in_ready(self) -> None:
+        """Step with unsatisfied dependency is not returned as ready."""
+        steps = [_make_step("a"), _make_step("b", depends_on=["a"])]
+        graph = TaskGraph(name="g", steps=steps)
+        ready = graph.get_ready_steps(completed=set(), failed=set())
+        names = [s.name for s in ready]
+        assert "b" not in names
+
+    def test_failed_dependency_excludes_step(self) -> None:
+        """Step with a failed dependency is never in the ready set."""
+        steps = [_make_step("a"), _make_step("b", depends_on=["a"])]
+        graph = TaskGraph(name="g", steps=steps)
+        # 'a' is failed — 'b' should NOT be ready
+        ready = graph.get_ready_steps(completed=set(), failed={"a"})
+        names = [s.name for s in ready]
+        assert "b" not in names
+
+    def test_empty_graph_returns_empty(self) -> None:
+        """get_ready_steps on empty graph returns []."""
+        graph = TaskGraph(name="g", steps=[])
+        assert graph.get_ready_steps(completed=set(), failed=set()) == []
+
+    def test_all_steps_completed_returns_empty(self) -> None:
+        """get_ready_steps when all steps are in completed returns []."""
+        steps = [_make_step("a"), _make_step("b")]
+        graph = TaskGraph(name="g", steps=steps)
+        ready = graph.get_ready_steps(completed={"a", "b"}, failed=set())
+        assert ready == []
+
+    def test_single_step_no_deps_is_ready(self) -> None:
+        """Single step with no dependencies is immediately ready."""
+        graph = TaskGraph(name="g", steps=[_make_step("only")])
+        ready = graph.get_ready_steps(completed=set(), failed=set())
+        assert len(ready) == 1
+        assert ready[0].name == "only"
+
+    def test_diamond_dependency_ready_set(self, diamond_graph: TaskGraph) -> None:
+        """In A -> B, A -> C, B+C -> D: after A completes, B and C are ready. D is not."""
+        ready = diamond_graph.get_ready_steps(completed={"a"}, failed=set())
+        names = {s.name for s in ready}
+        assert "b" in names
+        assert "c" in names
+        assert "d" not in names
+        assert "a" not in names
+
+    def test_independent_steps_all_ready(self, independent_graph: TaskGraph) -> None:
+        """Three steps with no deps: all three are ready initially."""
+        ready = independent_graph.get_ready_steps(completed=set(), failed=set())
+        names = {s.name for s in ready}
+        assert names == {"x", "y", "z"}
+
+    def test_linear_chain_one_ready_at_a_time(self, linear_graph: TaskGraph) -> None:
+        """A -> B -> C: only A is ready initially. After A, only B. After B, only C."""
+        ready_init = linear_graph.get_ready_steps(completed=set(), failed=set())
+        assert [s.name for s in ready_init] == ["a"]
+
+        ready_after_a = linear_graph.get_ready_steps(completed={"a"}, failed=set())
+        assert [s.name for s in ready_after_a] == ["b"]
+
+        ready_after_b = linear_graph.get_ready_steps(completed={"a", "b"}, failed=set())
+        assert [s.name for s in ready_after_b] == ["c"]
+
+    def test_ready_steps_insertion_order(self) -> None:
+        """Ready steps are returned in the same order as self.steps."""
+        steps = [_make_step("z"), _make_step("y"), _make_step("x")]
+        graph = TaskGraph(name="g", steps=steps)
+        ready = graph.get_ready_steps(completed=set(), failed=set())
+        assert [s.name for s in ready] == ["z", "y", "x"]
+
+    def test_step_already_in_failed_not_in_ready(self) -> None:
+        """Step that is already in the failed set is not returned as ready."""
+        steps = [_make_step("a"), _make_step("b")]
+        graph = TaskGraph(name="g", steps=steps)
+        # 'a' is in failed — it should NOT appear in ready
+        ready = graph.get_ready_steps(completed=set(), failed={"a"})
+        names = [s.name for s in ready]
+        assert "a" not in names
+
+
+# ---------------------------------------------------------------------------
+# Group 7: get_cascade_skip_steps — cascade failure helper
+# ---------------------------------------------------------------------------
+
+
+class TestGetCascadeSkipSteps:
+    """Tests for TaskGraph.get_cascade_skip_steps(failed, completed)."""
+
+    def test_step_with_failed_dep_is_skippable(self) -> None:
+        """Step whose dependency failed should be in cascade skip list."""
+        steps = [_make_step("a"), _make_step("b", depends_on=["a"])]
+        graph = TaskGraph(name="g", steps=steps)
+        skippable = graph.get_cascade_skip_steps(failed={"a"}, completed=set())
+        names = [s.name for s in skippable]
+        assert "b" in names
+
+    def test_step_with_all_deps_completed_not_skippable(self) -> None:
+        """Step whose deps are all completed is NOT in cascade skip list."""
+        steps = [_make_step("a"), _make_step("b", depends_on=["a"])]
+        graph = TaskGraph(name="g", steps=steps)
+        skippable = graph.get_cascade_skip_steps(failed=set(), completed={"a"})
+        names = [s.name for s in skippable]
+        assert "b" not in names
+
+    def test_transitive_cascade(self) -> None:
+        """A fails -> B skippable -> C (depends on B) also skippable once B added to failed set."""
+        steps = [
+            _make_step("a"),
+            _make_step("b", depends_on=["a"]),
+            _make_step("c", depends_on=["b"]),
+        ]
+        graph = TaskGraph(name="g", steps=steps)
+        # A failed, B should be skippable
+        skippable_round1 = graph.get_cascade_skip_steps(failed={"a"}, completed=set())
+        names1 = [s.name for s in skippable_round1]
+        assert "b" in names1
+
+        # Now B is also failed (cascade-skipped) — C should be skippable
+        skippable_round2 = graph.get_cascade_skip_steps(failed={"a", "b"}, completed=set())
+        names2 = [s.name for s in skippable_round2]
+        assert "c" in names2
+
+    def test_no_failed_returns_empty(self) -> None:
+        """When no steps have failed, cascade skip list is empty."""
+        steps = [_make_step("a"), _make_step("b", depends_on=["a"])]
+        graph = TaskGraph(name="g", steps=steps)
+        skippable = graph.get_cascade_skip_steps(failed=set(), completed=set())
+        assert skippable == []
+
+    def test_already_processed_step_excluded(self) -> None:
+        """Steps already in completed or failed are not returned as skippable."""
+        steps = [_make_step("a"), _make_step("b", depends_on=["a"])]
+        graph = TaskGraph(name="g", steps=steps)
+        # 'b' is already in completed — should not be in skippable list
+        skippable = graph.get_cascade_skip_steps(failed={"a"}, completed={"b"})
+        names = [s.name for s in skippable]
+        assert "b" not in names
+
     def test_from_dict_raises_when_step_entry_not_dict(self) -> None:
         """from_dict() raises ConfigError when a step list entry is not a dict."""
         data: dict[str, Any] = {"name": "g", "steps": ["not-a-dict"]}

@@ -562,6 +562,62 @@ Step(name="analyze", action=my_custom_step)
 
 ---
 
+## 10. Concurrent Step Execution
+
+When multiple steps have all their dependencies satisfied and don't depend on each other, you can run them in parallel. Add `parallel=True` to any step that should participate in concurrent execution:
+
+```python
+from kairos import Workflow, Step, StepContext
+
+def fetch_data(ctx: StepContext) -> dict:
+    return {"items": ["alpha", "beta", "gamma"]}
+
+def analyze_a(ctx: StepContext) -> dict:
+    data = ctx.inputs["fetch_data"]
+    return {"result_a": f"Analyzed {len(data['items'])} items (path A)"}
+
+def analyze_b(ctx: StepContext) -> dict:
+    data = ctx.inputs["fetch_data"]
+    return {"result_b": f"Analyzed {len(data['items'])} items (path B)"}
+
+def combine(ctx: StepContext) -> dict:
+    a = ctx.inputs["analyze_a"]
+    b = ctx.inputs["analyze_b"]
+    return {"combined": f"{a['result_a']} + {b['result_b']}"}
+
+workflow = Workflow(
+    name="concurrent-example",
+    steps=[
+        Step(name="fetch_data", action=fetch_data),
+        Step(name="analyze_a", action=analyze_a,
+             depends_on=["fetch_data"], parallel=True),
+        Step(name="analyze_b", action=analyze_b,
+             depends_on=["fetch_data"], parallel=True),
+        Step(name="combine", action=combine,
+             depends_on=["analyze_a", "analyze_b"]),
+    ],
+    max_concurrency=4,
+)
+
+result = workflow.run({})
+print(f"Status: {result.status.value}")
+print(f"Output: {result.step_results['combine'].output}")
+```
+
+**How it works:**
+- `fetch_data` runs first (no dependencies).
+- `analyze_a` and `analyze_b` both depend only on `fetch_data`. Since both have `parallel=True` and their dependencies are satisfied, they run concurrently in a `ThreadPoolExecutor`.
+- `combine` waits for both analysis steps to finish before running.
+- `max_concurrency=4` caps the thread pool to 4 workers.
+
+**Key points:**
+- `parallel=False` (the default) is unchanged -- existing workflows work identically.
+- `StateStore` is thread-safe under the hood (`threading.Lock` on all public methods).
+- The LLM circuit breaker and hook emission are also thread-safe.
+- Steps without `parallel=True` always run sequentially, even if siblings are ready.
+
+---
+
 ## Next Steps
 
 - **Run the examples** in the `examples/` directory to see more patterns
