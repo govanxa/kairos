@@ -322,7 +322,6 @@ if __name__ == "__main__":
     print("=" * 50)
     print(f"\n{synth['summary']}")
     print(f"\nTotal tokens: {synth['total_tokens']}")
-    print(f"LLM calls tracked: {result.llm_calls}")
 
     assert result.status == WorkflowStatus.COMPLETE
     print("\nDone.")
