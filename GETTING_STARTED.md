@@ -380,6 +380,7 @@ Adapters are optional dependencies. Install only what you need:
 ```bash
 pip install kairos-ai[anthropic]    # Claude adapter
 pip install kairos-ai[openai]       # OpenAI adapter
+pip install kairos-ai[gemini]       # Gemini adapter
 ```
 
 ### Set your API key
@@ -390,23 +391,26 @@ Adapters read credentials from environment variables — never from code. This i
 # Linux/Mac
 export ANTHROPIC_API_KEY="sk-ant-your-key-here"
 export OPENAI_API_KEY="sk-your-key-here"
+export GOOGLE_API_KEY="your-gemini-key-here"
 
 # Windows PowerShell
 $env:ANTHROPIC_API_KEY = "sk-ant-your-key-here"
 $env:OPENAI_API_KEY = "sk-your-key-here"
+$env:GOOGLE_API_KEY = "your-gemini-key-here"
 ```
 
 If you try to pass `api_key` as a parameter, Kairos raises `SecurityError` immediately. This prevents accidental credential exposure in code, logs, or version control.
 
 ### Use the factory functions
 
-The `claude()` and `openai_adapter()` functions return step-compatible callables. Use `{placeholder}` syntax to reference data from upstream steps:
+The `claude()`, `openai_adapter()`, and `gemini()` functions return step-compatible callables. Use `{placeholder}` syntax to reference data from upstream steps:
 
 ```python
 from kairos import Workflow, Step, Schema, FailurePolicy, FailureAction
 from kairos import validators as v
 from kairos.adapters.claude import claude
 from kairos.adapters.openai_adapter import openai_adapter
+from kairos.adapters.gemini import gemini
 
 # Define what the analysis must look like
 analysis_schema = Schema(
@@ -472,13 +476,13 @@ Different steps can use different providers in the same workflow:
 
 ```python
 Step(name="brainstorm", action=claude("Brainstorm ideas for: {topic}")),
-Step(name="evaluate", action=openai_adapter("Evaluate these ideas: {brainstorm}")),
-Step(name="refine", action=claude("Refine the best idea: {evaluate}")),
+Step(name="evaluate", action=gemini("Evaluate these ideas: {brainstorm}")),
+Step(name="refine", action=openai_adapter("Refine the best idea: {evaluate}")),
 ```
 
 ### Supported providers
 
-Kairos has dedicated adapters for Claude and OpenAI. Many other providers use the OpenAI-compatible API format, so the `OpenAIAdapter` works with them by changing the `base_url`:
+Kairos has dedicated adapters for Claude, OpenAI, and Gemini. Many other providers use the OpenAI-compatible API format, so the `OpenAIAdapter` works with them by changing the `base_url`:
 
 | Provider | Adapter | Install | Setup |
 |---|---|---|---|
@@ -490,7 +494,7 @@ Kairos has dedicated adapters for Claude and OpenAI. Many other providers use th
 | **Together AI** | `OpenAIAdapter` | `pip install kairos-ai[openai]` | `OPENAI_API_KEY` = your Together key |
 | **Ollama** (local) | `OpenAIAdapter` | `pip install kairos-ai[openai]` | No API key needed |
 | **LM Studio** (local) | `OpenAIAdapter` | `pip install kairos-ai[openai]` | No API key needed |
-| **Gemini** | *Planned* | — | — |
+| **Gemini** | `GeminiAdapter` | `pip install kairos-ai[gemini]` | `GOOGLE_API_KEY` or `GEMINI_API_KEY` env var |
 
 **Using OpenAI-compatible providers:**
 
@@ -581,5 +585,6 @@ Step(name="analyze", action=my_custom_step)
 | `WorkflowStatus` | `from kairos import WorkflowStatus` | COMPLETE, FAILED, RUNNING |
 | `claude` | `from kairos.adapters.claude import claude` | Claude adapter factory |
 | `openai_adapter` | `from kairos.adapters.openai_adapter import openai_adapter` | OpenAI adapter factory |
+| `gemini` | `from kairos.adapters.gemini import gemini` | Gemini adapter factory |
 | `ModelResponse` | `from kairos import ModelResponse` | Normalized LLM response |
 | `TokenUsage` | `from kairos import TokenUsage` | Token count from LLM call |

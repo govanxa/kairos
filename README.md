@@ -137,12 +137,14 @@ Kairos doesn't care which LLM powers your steps. Any callable that accepts a `St
 ```python
 from kairos.adapters.claude import claude
 from kairos.adapters.openai_adapter import openai_adapter
+from kairos.adapters.gemini import gemini
 
 workflow = Workflow(
     name="ai-pipeline",
     steps=[
         Step(name="research", action=claude("Research {item}"), foreach="topics"),
-        Step(name="draft", action=openai_adapter("Write a report on: {research}")),
+        Step(name="review", action=gemini("Review this research: {research}")),
+        Step(name="draft", action=openai_adapter("Write a report on: {review}")),
     ],
 )
 ```
@@ -152,6 +154,7 @@ Adapters handle SDK setup, credential sourcing (from environment variables — n
 ```bash
 pip install kairos-ai[anthropic]    # Claude adapter
 pip install kairos-ai[openai]       # OpenAI adapter
+pip install kairos-ai[gemini]       # Gemini adapter
 pip install kairos-ai[all]          # All providers
 ```
 
@@ -299,12 +302,12 @@ Kairos is built as a single MVP phase combining the Core Engine and Validation L
 
 | Module | Status |
 |---|---|
-| Model Adapters (Claude, OpenAI) | Done |
+| Model Adapters (Claude, OpenAI, Gemini) | Done |
 | Concurrent step execution | Planned |
 | Observability (RunLogger, CLI, Dashboard) | Planned |
 | Plugin System | Planned |
 
-1,029 tests passing, 98% coverage across 1,960 statements in 16 source files.
+1,062 tests passing, 98% coverage across 17 source files.
 
 ---
 
