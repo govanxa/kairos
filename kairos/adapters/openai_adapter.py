@@ -106,7 +106,7 @@ class OpenAIAdapter:
         if openai_sdk is None:
             raise ConfigError(
                 "The 'openai' package is required for OpenAIAdapter but is not installed. "
-                "Install it with: pip install kairos-sdk[openai]  or  pip install openai"
+                "Install it with: pip install kairos-ai[openai]  or  pip install openai"
             )
 
         # S15: enforce HTTPS for remote base URLs.
