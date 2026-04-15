@@ -345,7 +345,10 @@ def _build_logger(
     if log_format == "jsonl":
         if log_file is None:
             raise ConfigError("--log-file is required when --log-format is 'jsonl'.")
-        sinks.append(JSONLinesSink(base_dir=log_file))
+        # Auto-create the log directory if it doesn't exist
+        log_dir = Path(log_file)
+        log_dir.mkdir(parents=True, exist_ok=True)
+        sinks.append(JSONLinesSink(base_dir=str(log_dir)))
 
     return RunLogger(sinks=sinks, verbosity=verbosity)  # type: ignore[arg-type]
 
