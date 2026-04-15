@@ -494,15 +494,15 @@ def validate(
     for step in workflow.steps:
         has_input = step.input_contract is not None
         has_output = step.output_contract is not None
-        name = f"{_b}{step.name!r}{_r}"
+        name = f"Step {_b}{step.name!r}{_r}"
         if has_input and has_output:
-            typer.echo(f"  {name} {_g}input/output contracts{_r}")
+            typer.echo(f"  {name}  {_g}input/output contracts{_r}")
         elif has_output:
-            typer.echo(f"  {name} {_g}output contract{_r}")
+            typer.echo(f"  {name}  {_g}output contract{_r}")
         elif has_input:
-            typer.echo(f"  {name} {_g}input contract{_r}")
+            typer.echo(f"  {name}  {_g}input contract{_r}")
         else:
-            typer.echo(f"  {name} {_d}no contracts{_r}")
+            typer.echo(f"  {name}  {_d}no contracts{_r}")
 
     # Optionally validate input against first step's input contract
     if input is not None or input_file is not None:
