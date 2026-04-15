@@ -913,12 +913,21 @@ kairos run my_workflow.py
 Use `--input` for inline JSON or `--input-file` for a JSON file:
 
 ```bash
-# Inline JSON
-kairos run my_workflow.py --input '{"name": "Kairos"}'
+# Inline JSON (bash / Linux / macOS)
+kairos run my_workflow --input '{"name": "Kairos"}'
 
-# From a file
-kairos run my_workflow.py --input-file inputs.json
+# From a file (works on all platforms — recommended for complex input)
+kairos run my_workflow --input-file inputs.json
 ```
+
+> **Windows PowerShell note:** PowerShell handles JSON quoting differently. Use double quotes with escaped inner quotes, or use `--input-file` instead:
+> ```powershell
+> # PowerShell — escaped double quotes
+> kairos run my_workflow --input "{""name"": ""Kairos""}"
+>
+> # Or just use a file (always works, any OS)
+> kairos run my_workflow --input-file inputs.json
+> ```
 
 The JSON is parsed via `json.loads()` only — never `eval()`. This is a security requirement.
 
