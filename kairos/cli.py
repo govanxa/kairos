@@ -1,9 +1,10 @@
 """Kairos CLI — command-line runner for workflow execution and validation.
 
-Provides three commands for v0.4.1:
+Provides four commands for v0.4.1:
 - ``kairos run <module>``      Execute a workflow module.
 - ``kairos validate <module>`` Dry-run plan and contract validation.
 - ``kairos version``           Print the Kairos SDK version.
+- ``kairos inspect <target>``  Inspect a .jsonl run log file.
 
 Security contracts (S13):
 - Module paths are validated with a strict regex before import_module() is called.
@@ -44,6 +45,16 @@ _MODULE_PATH_RE = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_.]*$")
 
 # Environment variable for specifying additional allowed workflow directories.
 _ENV_VAR = "KAIROS_WORKFLOWS_DIR"
+
+# ANSI escape codes used by the inspect command (duplicated from ConsoleSink deliberately
+# — no coupling between inspect output and the logger module).
+_ANSI_RESET = "\033[0m"
+_ANSI_DIM = "\033[2m"
+_ANSI_BOLD = "\033[1m"
+_ANSI_CYAN = "\033[36m"
+_ANSI_YELLOW = "\033[33m"
+_ANSI_RED = "\033[31m"
+_ANSI_GREEN = "\033[32m"
 
 # ---------------------------------------------------------------------------
 # Typer app — only constructed when typer is available
@@ -542,6 +553,488 @@ def validate(
 def version() -> None:
     """Print the Kairos SDK version."""
     typer.echo(_kairos_sdk.__version__)
+
+
+# ---------------------------------------------------------------------------
+# inspect helpers — pure functions, testable in isolation
+# ---------------------------------------------------------------------------
+
+
+def _inspect_resolve_jsonl_path(target: str) -> Path:
+    """Resolve *target* to a ``.jsonl`` file path.
+
+    If *target* is a file, it must exist and have a ``.jsonl`` extension.
+    If *target* is a directory, all ``*.jsonl`` files inside are globbed;
+    the most recently modified file is returned.
+
+    Args:
+        target: A file path or directory path (as a string).
+
+    Returns:
+        Resolved ``Path`` object pointing to the chosen ``.jsonl`` file.
+
+    Raises:
+        ConfigError: If the target does not exist, is not a ``.jsonl`` file,
+            or is a directory containing no ``.jsonl`` files.
+    """
+    p = Path(target).resolve()
+
+    if p.is_file():
+        if p.suffix != ".jsonl":
+            raise ConfigError(
+                f"Target {target!r} is not a .jsonl file. "
+                "The inspect command only reads .jsonl run logs."
+            )
+        return p
+
+    if p.is_dir():
+        candidates = sorted(p.glob("*.jsonl"), key=lambda f: os.path.getmtime(f))
+        if not candidates:
+            raise ConfigError(
+                f"Directory {target!r} contains no .jsonl files. "
+                "Run a workflow with --log-format=jsonl to produce a run log."
+            )
+        return candidates[-1]  # most recently modified
+
+    raise ConfigError(
+        f"Target {target!r} does not exist. "
+        "Provide a path to a .jsonl run log or a directory containing one."
+    )
+
+
+def _inspect_read_events(file_path: Path) -> list[dict[str, object]]:
+    """Read a ``.jsonl`` file and return a list of parsed event dicts.
+
+    Each line is parsed independently with ``json.loads()``.  Malformed lines
+    are skipped with a warning to stderr.
+
+    Args:
+        file_path: Absolute path to the ``.jsonl`` file.
+
+    Returns:
+        List of parsed event dicts (may be empty only if every line is malformed).
+
+    Raises:
+        ConfigError: If the file contains no valid events.
+    """
+    events: list[dict[str, object]] = []
+    raw_text = file_path.read_text(encoding="utf-8")
+
+    for lineno, line in enumerate(raw_text.splitlines(), start=1):
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            parsed = json.loads(line)
+            if isinstance(parsed, dict):
+                events.append(cast(dict[str, object], parsed))
+            else:
+                print(  # noqa: T20
+                    f"Warning: line {lineno} in {file_path.name!r} is not a JSON object — skipped.",
+                    file=sys.stderr,
+                )
+        except json.JSONDecodeError:
+            print(  # noqa: T20
+                f"Warning: line {lineno} in {file_path.name!r} is malformed JSON — skipped.",
+                file=sys.stderr,
+            )
+
+    if not events:
+        raise ConfigError(
+            f"No valid events found in {str(file_path)!r}. "  # str() avoids WindowsPath repr
+            "The file may be empty or contain only malformed JSON lines."
+        )
+
+    return events
+
+
+def _inspect_extract_summary(events: list[dict[str, object]]) -> dict[str, object]:
+    """Extract a run summary from the event list.
+
+    Derives: workflow_name, run_id, status, started_at, duration_ms, and
+    step counts.  Authoritative step counts come from ``workflow_complete``'s
+    ``data.summary`` when present; otherwise they are counted from step events.
+
+    Args:
+        events: List of parsed event dicts from a ``.jsonl`` file.
+
+    Returns:
+        Summary dict with keys: ``workflow_name``, ``run_id``, ``status``,
+        ``started_at``, ``duration_ms``, ``total_steps``, ``completed_steps``,
+        ``failed_steps``, ``skipped_steps``.
+    """
+    workflow_name: str = "unknown"
+    run_id: str = ""
+    status: str = "incomplete"
+    started_at: str = ""
+    duration_ms: float = 0.0
+    total_steps: int = 0
+    completed_steps: int = 0
+    failed_steps: int = 0
+    skipped_steps: int = 0
+
+    # Scan once — collect what we need from known event types
+    for event in events:
+        etype = event.get("event_type", "")
+        raw_data: object = event.get("data") or {}
+        data: dict[str, object] = (
+            cast(dict[str, object], raw_data) if isinstance(raw_data, dict) else {}
+        )
+
+        if etype == "workflow_start":
+            workflow_name = str(data.get("workflow_name", "unknown"))
+            run_id = str(data.get("run_id", ""))
+            started_at = str(event.get("timestamp", ""))
+            total_steps = int(str(data.get("total_steps", 0)))
+
+        elif etype == "workflow_complete":
+            status = str(data.get("status", "unknown"))
+            raw_summary: object = data.get("summary")
+            if isinstance(raw_summary, dict):
+                sd = cast(dict[str, object], raw_summary)
+                total_steps = int(str(sd.get("total_steps", total_steps)))
+                completed_steps = int(str(sd.get("completed_steps", 0)))
+                failed_steps = int(str(sd.get("failed_steps", 0)))
+                skipped_steps = int(str(sd.get("skipped_steps", 0)))
+                duration_ms = float(str(sd.get("total_duration_ms", 0.0)))
+
+    # If no workflow_complete was found, count steps from individual events
+    if status == "incomplete":
+        seen_completed: set[str] = set()
+        seen_failed: set[str] = set()
+        seen_skipped: set[str] = set()
+        for event in events:
+            etype = event.get("event_type", "")
+            step_id = event.get("step_id")
+            if step_id is None:
+                continue
+            if etype == "step_complete":
+                seen_completed.add(str(step_id))
+            elif etype == "step_fail":
+                seen_failed.add(str(step_id))
+            elif etype == "step_skip":
+                seen_skipped.add(str(step_id))
+        completed_steps = len(seen_completed)
+        failed_steps = len(seen_failed)
+        skipped_steps = len(seen_skipped)
+
+    return {
+        "workflow_name": workflow_name,
+        "run_id": run_id,
+        "status": status,
+        "started_at": started_at,
+        "duration_ms": duration_ms,
+        "total_steps": total_steps,
+        "completed_steps": completed_steps,
+        "failed_steps": failed_steps,
+        "skipped_steps": skipped_steps,
+    }
+
+
+def _inspect_filter_events(
+    events: list[dict[str, object]],
+    failures_only: bool,
+    step_name: str | None,
+) -> list[dict[str, object]]:
+    """Filter the event list by failure level and/or step name.
+
+    Workflow-level events (``step_id`` is ``None``) always pass through.
+    When ``failures_only`` is True, step-level events must be ``error`` or
+    ``warn`` level.  When ``step_name`` is provided, step-level events must
+    have a matching ``step_id``.
+
+    Args:
+        events: List of parsed event dicts.
+        failures_only: Keep only error/warn-level step events.
+        step_name: If provided, keep only events for this step_id.
+
+    Returns:
+        Filtered list of event dicts.
+    """
+    result: list[dict[str, object]] = []
+    for event in events:
+        step_id = event.get("step_id")
+        is_workflow_level = step_id is None
+
+        if is_workflow_level:
+            # Workflow-level events always pass through
+            result.append(event)
+            continue
+
+        # Apply step-name filter
+        if step_name is not None and str(step_id) != step_name:
+            continue
+
+        # Apply failures filter — check level for error/warn
+        if failures_only:
+            level = str(event.get("level", "")).lower()
+            if "error" not in level and "warn" not in level:
+                continue
+
+        result.append(event)
+
+    return result
+
+
+def _inspect_format_header(summary: dict[str, object], color: bool) -> str:
+    """Build the multi-line header block for an inspect run.
+
+    Args:
+        summary: Dict produced by ``_inspect_extract_summary()``.
+        color: When True, ANSI escape codes are included.
+
+    Returns:
+        Multi-line string with Run, Status, Started, Duration, and Steps lines.
+    """
+
+    def bold(text: str) -> str:
+        return f"{_ANSI_BOLD}{text}{_ANSI_RESET}" if color else text
+
+    def cyan(text: str) -> str:
+        return f"{_ANSI_CYAN}{text}{_ANSI_RESET}" if color else text
+
+    def green(text: str) -> str:
+        return f"{_ANSI_GREEN}{text}{_ANSI_RESET}" if color else text
+
+    def red(text: str) -> str:
+        return f"{_ANSI_RED}{text}{_ANSI_RESET}" if color else text
+
+    def yellow(text: str) -> str:
+        return f"{_ANSI_YELLOW}{text}{_ANSI_RESET}" if color else text
+
+    def dim(text: str) -> str:
+        return f"{_ANSI_DIM}{text}{_ANSI_RESET}" if color else text
+
+    name = str(summary.get("workflow_name", "unknown"))
+    run_id = str(summary.get("run_id", ""))
+    run_id_short = run_id[:8] if run_id else "--------"
+    status = str(summary.get("status", "unknown"))
+    started_at = str(summary.get("started_at", ""))
+    duration_ms = float(str(summary.get("duration_ms", 0.0)))
+    total_steps = int(str(summary.get("total_steps", 0)))
+    completed = int(str(summary.get("completed_steps", 0)))
+    failed = int(str(summary.get("failed_steps", 0)))
+    skipped = int(str(summary.get("skipped_steps", 0)))
+
+    # Status color
+    if status == "complete":
+        status_str = green(status)
+    elif status in ("failed", "error"):
+        status_str = red(status)
+    elif status == "incomplete":
+        status_str = yellow(status)
+    else:
+        status_str = status
+
+    lines = [
+        f"Run: {bold(name)} {dim(f'(run {run_id_short})')}",
+        f"Status: {status_str}",
+        f"Started: {dim(started_at)}",
+        f"Duration: {duration_ms:.1f}ms",
+        f"Steps: {cyan(f'{completed}/{total_steps}')} completed, "
+        f"{red(str(failed)) if failed else str(failed)} failed, "
+        f"{str(skipped)} skipped",
+    ]
+    return "\n".join(lines)
+
+
+def _inspect_format_event_line(event: dict[str, object], color: bool) -> str:
+    """Format a single event dict as a human-readable line.
+
+    Matches the ConsoleSink format: timestamp, level, event_type, detail.
+
+    Args:
+        event: Parsed event dict from a ``.jsonl`` file.
+        color: When True, ANSI escape codes are included.
+
+    Returns:
+        A single formatted line string (no trailing newline).
+    """
+
+    def dim(text: str) -> str:
+        return f"{_ANSI_DIM}{text}{_ANSI_RESET}" if color else text
+
+    def bold(text: str) -> str:
+        return f"{_ANSI_BOLD}{text}{_ANSI_RESET}" if color else text
+
+    def red_txt(text: str) -> str:
+        return f"{_ANSI_RED}{text}{_ANSI_RESET}" if color else text
+
+    def green_txt(text: str) -> str:
+        return f"{_ANSI_GREEN}{text}{_ANSI_RESET}" if color else text
+
+    # Parse timestamp to HH:MM:SS
+    ts_raw = str(event.get("timestamp", ""))
+    # ISO 8601: 2024-01-15T10:00:00+00:00 → extract time portion
+    ts_part = ts_raw[11:19] if len(ts_raw) >= 19 else ts_raw
+
+    # Level formatting
+    level_raw = str(event.get("level", "info")).lower()
+    if "error" in level_raw:
+        level_str = (f"{_ANSI_RED}ERROR{_ANSI_RESET}" if color else "ERROR").ljust(5)
+    elif "warn" in level_raw:
+        level_str = (f"{_ANSI_YELLOW}WARN {_ANSI_RESET}" if color else "WARN ").ljust(5)
+    else:
+        level_str = (f"{_ANSI_CYAN}INFO {_ANSI_RESET}" if color else "INFO ").ljust(5)
+
+    etype = str(event.get("event_type", "unknown"))
+    raw_data: object = event.get("data") or {}
+    data: dict[str, object] = (
+        cast(dict[str, object], raw_data) if isinstance(raw_data, dict) else {}
+    )
+
+    match etype:
+        case "workflow_start":
+            name = data.get("workflow_name", "?")
+            run_id = str(data.get("run_id", ""))[:8]
+            steps = data.get("total_steps", "?")
+            detail = f"{bold(str(name))} ({steps} steps, run {run_id})"
+        case "workflow_complete":
+            status = data.get("status", "?")
+            raw_s: object = data.get("summary", {})
+            if isinstance(raw_s, dict):
+                s = cast(dict[str, object], raw_s)
+                done = s.get("completed_steps", "?")
+                total = s.get("total_steps", "?")
+                dur = s.get("total_duration_ms", 0)
+                dur_str = f"{float(str(dur)):.1f}ms"
+                marker = green_txt("ok") if status == "complete" else red_txt(str(status))
+                detail = f"{marker} {done}/{total} steps, {dur_str}"
+            else:
+                detail = str(status)
+        case "step_start":
+            step = data.get("step_id", "?")
+            attempt = data.get("attempt", 1)
+            detail = bold(str(step))
+            try:
+                attempt_int = int(str(attempt))
+            except (ValueError, TypeError):
+                attempt_int = 1
+            if attempt_int > 1:
+                detail += f" (attempt {attempt})"
+        case "step_complete":
+            step = data.get("step_id", "?")
+            dur = data.get("duration_ms", 0)
+            dur_str = f"{float(str(dur)):.1f}ms"
+            detail = f"{bold(str(step))} {green_txt('ok')} {dur_str}"
+        case "step_fail":
+            step = data.get("step_id", "?")
+            err_type = data.get("error_type", "Error")
+            err_msg = data.get("error_message", "")
+            msg = f"{err_type}: {err_msg}" if err_msg else str(err_type)
+            detail = f"{bold(str(step))} {red_txt('FAILED')} {msg}"
+        case "step_retry":
+            step = data.get("step_id", "?")
+            attempt = data.get("attempt", "?")
+            detail = f"{bold(str(step))} retry (attempt {attempt})"
+        case "step_skip":
+            step = data.get("step_id", "?")
+            reason = data.get("reason", "")
+            detail = f"{bold(str(step))} skipped"
+            if reason:
+                detail += f" ({reason})"
+        case "validation_complete":
+            step = data.get("step_id", "?")
+            phase = data.get("phase", "?")
+            detail = f"{step} {phase} {green_txt('pass')}"
+        case "validation_fail":
+            step = data.get("step_id", "?")
+            phase = data.get("phase", "?")
+            detail = f"{step} {phase} {red_txt('FAIL')}"
+        case "validation_start":
+            step = data.get("step_id", "?")
+            phase = data.get("phase", "?")
+            detail = f"{step} {phase}"
+        case _:
+            data_parts = ", ".join(f"{k}={v}" for k, v in data.items())
+            detail = data_parts
+
+    ts_fmt = dim(ts_part)
+    return f"  {ts_fmt} {level_str} {etype:<22s} {detail}"
+
+
+# ---------------------------------------------------------------------------
+# inspect command
+# ---------------------------------------------------------------------------
+
+
+@app.command()  # type: ignore[misc]
+def inspect(
+    target: Annotated[
+        str,
+        typer.Argument(
+            help="Path to a .jsonl run log file, or a directory containing .jsonl files."
+        ),
+    ],
+    failures: Annotated[
+        bool,
+        typer.Option("--failures", "-f", help="Show only error/warning events."),
+    ] = False,
+    step: Annotated[
+        str | None,
+        typer.Option("--step", "-s", help="Filter events to a specific step name."),
+    ] = None,
+    no_color: Annotated[
+        bool,
+        typer.Option("--no-color", help="Disable ANSI color output."),
+    ] = False,
+) -> None:
+    """Inspect a Kairos run log (.jsonl) file.
+
+    Displays a summary header (workflow name, run ID, status, duration, step
+    counts) followed by a timestamped event timeline.  Optionally filters to
+    failure events only (``--failures``) or a specific step (``--step``).
+
+    The *target* may be a path to a ``.jsonl`` file or a directory; when a
+    directory is given, the most recently modified ``.jsonl`` file is used.
+    """
+    # Auto-detect color unless --no-color is set
+    use_color = (not no_color) and hasattr(sys.stdout, "isatty") and sys.stdout.isatty()
+
+    # Resolve the .jsonl file
+    try:
+        file_path = _inspect_resolve_jsonl_path(target)
+    except ConfigError as exc:
+        _, err_msg = sanitize_exception(exc)
+        typer.echo(f"Error: {err_msg}", err=True)
+        raise typer.Exit(code=1) from None
+
+    # Read events
+    try:
+        events = _inspect_read_events(file_path)
+    except ConfigError as exc:
+        _, err_msg = sanitize_exception(exc)
+        typer.echo(f"Error: {err_msg}", err=True)
+        raise typer.Exit(code=1) from None
+
+    # Extract summary
+    summary = _inspect_extract_summary(events)
+
+    # Print header
+    header = _inspect_format_header(summary, color=use_color)
+    typer.echo(header)
+    typer.echo("")  # blank line between header and timeline
+
+    # Filter events
+    filtered = _inspect_filter_events(events, failures_only=failures, step_name=step)
+
+    # Determine if the step filter found any step-level events (not just workflow-level)
+    if step is not None:
+        step_level_events = [e for e in filtered if e.get("step_id") is not None]
+        if not step_level_events:
+            typer.echo(
+                f"No events found for step {step!r}. "
+                "Use --step with the exact step name as it appears in the log.",
+                err=True,
+            )
+            raise typer.Exit(code=1) from None
+
+    # Print timeline
+    for event in filtered:
+        line = _inspect_format_event_line(event, color=use_color)
+        typer.echo(line)
+
+    raise typer.Exit(code=0)
 
 
 # ---------------------------------------------------------------------------

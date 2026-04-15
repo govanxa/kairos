@@ -190,11 +190,15 @@ kairos run my_workflow.py --input '{"topic": "AI security"}'
 # Validate a workflow without running it
 kairos validate my_workflow.py
 
+# View past run details from log files
+kairos inspect ./logs/
+kairos inspect ./logs/my_workflow_abc123.jsonl --failures --step research
+
 # Print the SDK version
 kairos version
 ```
 
-The CLI enforces **module import restriction** (security requirement S13) -- only modules from the current directory or explicitly allowed directories can be loaded. Input is always parsed via `json.loads()`, never `eval()`.
+The CLI enforces **module import restriction** (security requirement S13) -- only modules from the current directory or explicitly allowed directories can be loaded. Input is always parsed via `json.loads()`, never `eval()`. The `inspect` command reads `.jsonl` log files written by `JSONLinesSink` and displays a colored summary with event timeline. Filter by failures (`--failures`) or step name (`--step`), and disable color with `--no-color`.
 
 ### Model-Agnostic
 Kairos doesn't care which LLM powers your steps. Any callable that accepts a `StepContext` works — plain functions, API calls, local models, or no LLM at all.
@@ -342,6 +346,7 @@ python examples/scoped_state.py
 | **Adapters** | Model Adapters | Claude, OpenAI, Gemini + any OpenAI-compatible provider |
 | **Observability** | Run Logger | Structured event logging with pluggable sinks and verbosity levels |
 | | CLI Runner | `kairos run`, `kairos validate`, `kairos version` with S13 module import security |
+| | CLI Inspect | `kairos inspect` — view past runs from `.jsonl` logs with colored output and filtering |
 
 ---
 
@@ -374,10 +379,11 @@ python examples/scoped_state.py
 | Concurrent step execution | Done |
 | Run Logger (structured logging, pluggable sinks) | Done |
 | CLI Runner (`kairos run`, `kairos validate`, `kairos version`) | Done |
+| CLI Inspect (`kairos inspect` — view past runs from log files) | Done |
 | Dashboard | Planned |
 | Plugin System | Planned |
 
-1,306 tests passing, 98% coverage across 19 source files.
+1,365 tests passing, 98% coverage across 19 source files.
 
 ---
 
