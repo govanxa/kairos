@@ -957,7 +957,8 @@ class TestStepContextIncrementLLMCalls:
         ctx = StepContext(state=store, inputs={}, _llm_call_callback=cb)
         r = repr(ctx)
         assert "_llm_call_callback" not in r
-        assert "cb" not in r
+        # Don't check bare "cb" — hex addresses like 0x...cb50 cause false matches
+        assert "callback" not in r.lower()
 
     def test_negative_count_rejected_without_callback(self) -> None:
         """Negative count raises ConfigError even without a callback."""
