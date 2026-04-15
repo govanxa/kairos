@@ -180,6 +180,18 @@ class Workflow:
 
         return executor.run(self._graph)
 
+    def add_hook(self, hook: ExecutorHooks) -> None:
+        """Add a lifecycle hook to this workflow.
+
+        The hook will be invoked for all runs made after this call.
+        Hooks added before a run are included in that run; hooks added
+        after a run started do not affect the in-progress run.
+
+        Args:
+            hook: An ExecutorHooks instance to append to the internal hooks list.
+        """
+        self._hooks.append(hook)
+
     async def run_async(self, initial_inputs: dict[str, object] | None = None) -> WorkflowResult:
         """Execute the workflow asynchronously.
 
