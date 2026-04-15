@@ -287,24 +287,157 @@ class LogSink(Protocol):
 
 
 class ConsoleSink:
-    """Writes pretty-printed log events to a stream (default: stderr).
+    """Writes human-readable log events to a stream (default: stderr).
 
-    Each event is written as a single line:
-    ``[timestamp] LEVEL event_type: key=value, key=value``
+    Uses ANSI colors when the output stream is a terminal (auto-detected).
+    Events are formatted for quick scanning with colored log levels, compact
+    data, and visual grouping between steps.
 
     Args:
         stream: Output stream. Defaults to ``sys.stderr``.
         verbosity: Per-sink verbosity override. When set, events below this
             level are not emitted regardless of the logger's verbosity.
+        color: Enable ANSI color output. ``None`` (default) auto-detects
+            based on whether the stream is a terminal. ``True`` forces color
+            on, ``False`` forces it off.
     """
+
+    # ANSI escape codes
+    _RESET = "\033[0m"
+    _DIM = "\033[2m"
+    _BOLD = "\033[1m"
+    _CYAN = "\033[36m"
+    _YELLOW = "\033[33m"
+    _RED = "\033[31m"
+    _GREEN = "\033[32m"
+
+    # Level -> (color, display string)
+    _LEVEL_STYLES: dict[str, tuple[str, str]] = {
+        "info": (_CYAN, "INFO "),
+        "warn": (_YELLOW, "WARN "),
+        "error": (_RED, "ERROR"),
+    }
+
+    # Event types that get a blank line before them for visual grouping
+    _GROUP_BREAK_EVENTS = frozenset({"workflow_start", "workflow_complete", "step_start"})
 
     def __init__(
         self,
         stream: IO[str] | None = None,
         verbosity: LogVerbosity | None = None,
+        color: bool | None = None,
     ) -> None:
         self._stream: IO[str] = stream if stream is not None else sys.stderr
         self._verbosity = verbosity
+        if color is None:
+            self._color = hasattr(self._stream, "isatty") and self._stream.isatty()
+        else:
+            self._color = color
+        self._last_step_id: str | None = None
+
+    def _fmt_level(self, level: str) -> str:
+        """Format the log level with optional color."""
+        style = self._LEVEL_STYLES.get(level, (self._CYAN, level.upper().ljust(5)))
+        if self._color:
+            return f"{style[0]}{style[1]}{self._RESET}"
+        return style[1]
+
+    def _fmt_dim(self, text: str) -> str:
+        """Format text as dim/gray with optional color."""
+        if self._color:
+            return f"{self._DIM}{text}{self._RESET}"
+        return text
+
+    def _fmt_bold(self, text: str) -> str:
+        """Format text as bold with optional color."""
+        if self._color:
+            return f"{self._BOLD}{text}{self._RESET}"
+        return text
+
+    def _fmt_success(self, text: str) -> str:
+        """Format text as green with optional color."""
+        if self._color:
+            return f"{self._GREEN}{text}{self._RESET}"
+        return text
+
+    def _fmt_error(self, text: str) -> str:
+        """Format text as red with optional color."""
+        if self._color:
+            return f"{self._RED}{text}{self._RESET}"
+        return text
+
+    def _format_event(self, event: LogEvent) -> str:
+        """Produce a human-readable one-line summary of the event."""
+        ts = self._fmt_dim(event.timestamp.strftime("%H:%M:%S"))
+        level = self._fmt_level(str(event.level))
+        etype = event.event_type
+        data = event.data
+
+        match etype:
+            case "workflow_start":
+                name = data.get("workflow_name", "?")
+                run_id = str(data.get("run_id", ""))[:8]
+                steps = data.get("total_steps", "?")
+                detail = f"{self._fmt_bold(str(name))} ({steps} steps, run {run_id})"
+            case "workflow_complete":
+                status = data.get("status", "?")
+                summary = data.get("summary", {})
+                if isinstance(summary, dict):
+                    done = summary.get("completed_steps", "?")
+                    total = summary.get("total_steps", "?")
+                    dur = summary.get("total_duration_ms", 0)
+                    dur_str = f"{float(str(dur)):.1f}ms"
+                    if status == "complete":
+                        marker = self._fmt_success("ok")
+                    else:
+                        marker = self._fmt_error(str(status))
+                    detail = f"{marker} {done}/{total} steps, {dur_str}"
+                else:
+                    detail = str(status)
+            case "step_start":
+                step = data.get("step_id", "?")
+                attempt = data.get("attempt", 1)
+                detail = self._fmt_bold(str(step))
+                if int(str(attempt)) > 1:
+                    detail += f" (attempt {attempt})"
+            case "step_complete":
+                step = data.get("step_id", "?")
+                dur = data.get("duration_ms", 0)
+                dur_str = f"{float(str(dur)):.1f}ms"
+                detail = f"{self._fmt_bold(str(step))} {self._fmt_success('ok')} {dur_str}"
+            case "step_fail":
+                step = data.get("step_id", "?")
+                err_type = data.get("error_type", "Error")
+                err_msg = data.get("error_message", "")
+                msg = f"{err_type}: {err_msg}" if err_msg else str(err_type)
+                detail = f"{self._fmt_bold(str(step))} {self._fmt_error('FAILED')} {msg}"
+            case "step_retry":
+                step = data.get("step_id", "?")
+                attempt = data.get("attempt", "?")
+                detail = f"{self._fmt_bold(str(step))} retry (attempt {attempt})"
+            case "step_skip":
+                step = data.get("step_id", "?")
+                reason = data.get("reason", "")
+                detail = f"{self._fmt_bold(str(step))} skipped"
+                if reason:
+                    detail += f" ({reason})"
+            case "validation_complete":
+                step = data.get("step_id", "?")
+                phase = data.get("phase", "?")
+                detail = f"{step} {phase} {self._fmt_success('pass')}"
+            case "validation_fail":
+                step = data.get("step_id", "?")
+                phase = data.get("phase", "?")
+                detail = f"{step} {phase} {self._fmt_error('FAIL')}"
+            case "validation_start":
+                step = data.get("step_id", "?")
+                phase = data.get("phase", "?")
+                detail = f"{step} {phase}"
+            case _:
+                data_parts = ", ".join(f"{k}={v}" for k, v in data.items())
+                detail = data_parts
+
+        return f"  {ts} {level} {etype:<22s} {detail}"
 
     def emit(self, event: LogEvent) -> None:
         """Write the event as a formatted line to the stream.
@@ -318,12 +451,15 @@ class ConsoleSink:
         ):
             return
 
-        ts = event.timestamp.strftime("%H:%M:%S")
-        level = str(event.level).upper()
-        data_parts = ", ".join(f"{k}={v}" for k, v in event.data.items())
-        line = f"[{ts}] {level} {event.event_type}"
-        if data_parts:
-            line = f"{line}: {data_parts}"
+        # Visual grouping: blank line when switching to a new step or workflow event
+        step_id = event.step_id
+        if event.event_type in self._GROUP_BREAK_EVENTS and (
+            self._last_step_id is not None or event.event_type == "workflow_complete"
+        ):
+            self._stream.write("\n")
+        self._last_step_id = step_id
+
+        line = self._format_event(event)
         self._stream.write(line + "\n")
 
     def flush(self) -> None:
@@ -332,7 +468,7 @@ class ConsoleSink:
             self._stream.flush()
 
     def close(self) -> None:
-        """No-op for console sink — stream lifecycle is managed externally."""
+        """No-op for console sink -- stream lifecycle is managed externally."""
 
 
 # ---------------------------------------------------------------------------
