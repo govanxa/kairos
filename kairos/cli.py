@@ -869,7 +869,6 @@ def _inspect_format_event_line(event: dict[str, object], color: bool) -> str:
     # Parse timestamp to HH:MM:SS (dim gray like ConsoleSink)
     ts_raw = str(event.get("timestamp", ""))
     ts_part = ts_raw[11:19] if len(ts_raw) >= 19 else ts_raw
-    ts_part = dim(ts_part)
 
     # Level formatting
     level_raw = str(event.get("level", "info")).lower()
