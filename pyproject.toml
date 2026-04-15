@@ -119,10 +119,13 @@ no_implicit_optional = true
 module = "kairos.schema"
 warn_unused_ignores = false
 
-# typer is optional — type: ignore comments guard against ImportError at runtime
-# but are flagged as unused when typer is installed during type checking.
+# typer is optional — may not be installed in CI or minimal environments.
+# The CLI module imports typer unconditionally (for Pylance compatibility)
+# but mypy may not find it. Suppress import and untyped-decorator errors.
 [[tool.mypy.overrides]]
 module = "kairos.cli"
+ignore_missing_imports = true
+disallow_untyped_decorators = false
 warn_unused_ignores = false
 
 [tool.pytest.ini_options]
