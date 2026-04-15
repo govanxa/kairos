@@ -12,17 +12,36 @@ requires-python = ">=3.11"
 authors = [
     { name = "Vanxa", email = "info@vanxa.com" },
 ]
-keywords = ["ai", "agents", "workflow", "orchestration", "security", "validation"]
+keywords = [
+    "ai",
+    "ai-agents",
+    "agents",
+    "contract",
+    "llm",
+    "model-agnostic",
+    "orchestration",
+    "pipeline",
+    "prompt-injection",
+    "retry",
+    "security",
+    "validation",
+    "workflow",
+]
 classifiers = [
-    "Development Status :: 3 - Alpha",
+    "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
     "License :: OSI Approved :: Apache Software License",
+    "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
+    "Framework :: Pydantic",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Security",
     "Topic :: Software Development :: Libraries :: Python Modules",
     "Typing :: Typed",
+    "Natural Language :: English",
 ]
 
 # Core SDK: zero external dependencies
@@ -46,6 +65,7 @@ all = ["kairos-ai[pydantic,cli,anthropic,openai,gemini]"]
 
 [project.urls]
 Homepage = "https://github.com/govanxa/kairos"
+Documentation = "https://github.com/govanxa/kairos/blob/main/GETTING_STARTED.md"
 Repository = "https://github.com/govanxa/kairos"
 Issues = "https://github.com/govanxa/kairos/issues"
 
