@@ -984,6 +984,49 @@ This reports:
 
 Use this to catch configuration errors before running a workflow.
 
+### `kairos inspect` — View Past Runs
+
+After running a workflow with JSON log output, use `inspect` to view the results:
+
+```bash
+# Run a workflow with JSONL logging
+kairos run my_workflow.py --log-format jsonl --log-file ./logs
+
+# Inspect the most recent run in a directory
+kairos inspect ./logs/
+
+# Inspect a specific log file
+kairos inspect ./logs/my_workflow_abc123.jsonl
+```
+
+The output shows a colored header summary (run ID, workflow name, status, duration, step counts) followed by an event timeline matching the `ConsoleSink` style.
+
+#### Filtering
+
+```bash
+# Show only failures (errors and warnings)
+kairos inspect ./logs/ --failures
+kairos inspect ./logs/ -f
+
+# Filter by step name
+kairos inspect ./logs/ --step research
+kairos inspect ./logs/ -s research
+
+# Combine filters
+kairos inspect ./logs/ --failures --step research
+```
+
+#### Disabling color
+
+```bash
+# For piping to files or accessibility
+kairos inspect ./logs/ --no-color
+```
+
+#### Security
+
+The `inspect` command only reads `.jsonl` files (extension enforced). Log data is parsed via `json.loads()` only — no code execution. The data in `.jsonl` files is already redacted by `RunLogger` before it reaches `JSONLinesSink`, so sensitive keys are never displayed.
+
 ### `kairos version` — Print SDK Version
 
 ```bash
@@ -1044,4 +1087,5 @@ workflow = Workflow(  # <-- the CLI finds this
 | `LogSink` | `from kairos import LogSink` | Protocol for custom sink implementations |
 | `kairos run` | CLI: `kairos run module.py` | Execute a workflow from the command line |
 | `kairos validate` | CLI: `kairos validate module.py` | Dry-run validation without execution |
+| `kairos inspect` | CLI: `kairos inspect ./logs/` | View past run details from `.jsonl` log files |
 | `kairos version` | CLI: `kairos version` | Print SDK version |
