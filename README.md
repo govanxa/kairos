@@ -34,6 +34,7 @@ The core SDK has **zero external dependencies** — it runs on the Python standa
 
 ```bash
 pip install kairos-ai[pydantic]    # Reuse existing Pydantic models as Kairos schemas
+pip install kairos-ai[cli]         # CLI commands: kairos run, kairos validate, kairos version
 ```
 
 Kairos has its own built-in schema system that works out of the box. The Pydantic extra is for teams that already use [Pydantic](https://docs.pydantic.dev/) models in their codebase — instead of redefining your data shapes, you can pass them directly via `Schema.from_pydantic(YourModel)`.
@@ -176,6 +177,24 @@ run_log = logger.get_log()  # Complete structured record of the run
 ```
 
 Three verbosity levels (MINIMAL, NORMAL, VERBOSE) control how much detail is captured. Sensitive keys are automatically redacted before events reach any sink.
+
+### CLI Runner
+Run workflows from the command line without writing a runner script:
+
+```bash
+pip install kairos-ai[cli]
+
+# Execute a workflow
+kairos run my_workflow.py --input '{"topic": "AI security"}'
+
+# Validate a workflow without running it
+kairos validate my_workflow.py
+
+# Print the SDK version
+kairos version
+```
+
+The CLI enforces **module import restriction** (security requirement S13) -- only modules from the current directory or explicitly allowed directories can be loaded. Input is always parsed via `json.loads()`, never `eval()`.
 
 ### Model-Agnostic
 Kairos doesn't care which LLM powers your steps. Any callable that accepts a `StepContext` works — plain functions, API calls, local models, or no LLM at all.
@@ -354,11 +373,11 @@ Kairos is built as a single MVP phase combining the Core Engine and Validation L
 | Model Adapters (Claude, OpenAI, Gemini) | Done |
 | Concurrent step execution | Done |
 | Run Logger (structured logging, pluggable sinks) | Done |
-| CLI Runner | Planned |
+| CLI Runner (`kairos run`, `kairos validate`, `kairos version`) | Done |
 | Dashboard | Planned |
 | Plugin System | Planned |
 
-1,248 tests passing, 98% coverage across 18 source files.
+1,306 tests passing, 98% coverage across 19 source files.
 
 ---
 
