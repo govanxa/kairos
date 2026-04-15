@@ -866,10 +866,10 @@ def _inspect_format_event_line(event: dict[str, object], color: bool) -> str:
     def green_txt(text: str) -> str:
         return f"{_ANSI_GREEN}{text}{_ANSI_RESET}" if color else text
 
-    # Parse timestamp to HH:MM:SS
+    # Parse timestamp to HH:MM:SS (dim gray like ConsoleSink)
     ts_raw = str(event.get("timestamp", ""))
-    # ISO 8601: 2024-01-15T10:00:00+00:00 → extract time portion
     ts_part = ts_raw[11:19] if len(ts_raw) >= 19 else ts_raw
+    ts_part = dim(ts_part)
 
     # Level formatting
     level_raw = str(event.get("level", "info")).lower()
