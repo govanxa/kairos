@@ -476,25 +476,33 @@ def validate(
         typer.echo(f"Error loading module: {err_type}: {err_msg}", err=True)
         raise typer.Exit(code=1) from None
 
+    # ANSI helpers
+    _g = "\033[32m"  # green
+    _y = "\033[33m"  # yellow
+    _b = "\033[1m"  # bold
+    _d = "\033[2m"  # dim
+    _r = "\033[0m"  # reset
+
     # Report plan structure
     graph = workflow.graph
     step_count = len(graph.steps)
     plural = "s" if step_count != 1 else ""
-    typer.echo(f"Plan structure valid ({step_count} step{plural}, graph validated)")
+    typer.echo(f"{_g}Plan structure valid{_r} ({step_count} step{plural}, graph validated)")
 
     # Report per-step contract status
     issues: list[str] = []
     for step in workflow.steps:
         has_input = step.input_contract is not None
         has_output = step.output_contract is not None
+        name = f"{_b}{step.name!r}{_r}"
         if has_input and has_output:
-            typer.echo(f"  Step {step.name!r} — input/output contracts defined")
+            typer.echo(f"  {name} {_g}input/output contracts{_r}")
         elif has_output:
-            typer.echo(f"  Step {step.name!r} — output contract defined")
+            typer.echo(f"  {name} {_g}output contract{_r}")
         elif has_input:
-            typer.echo(f"  Step {step.name!r} — input contract defined")
+            typer.echo(f"  {name} {_g}input contract{_r}")
         else:
-            typer.echo(f"  Step {step.name!r} — no contracts")
+            typer.echo(f"  {name} {_d}no contracts{_r}")
 
     # Optionally validate input against first step's input contract
     if input is not None or input_file is not None:
@@ -516,17 +524,17 @@ def validate(
                     schema=first_step.input_contract,  # type: ignore[arg-type]
                 )
                 if vresult.valid:
-                    typer.echo("  Input validation: PASS")
+                    typer.echo(f"  Input validation: {_g}PASS{_r}")
                 else:
-                    typer.echo(f"  Input validation: FAIL ({len(vresult.errors)} error(s))")
+                    typer.echo(f"  Input validation: {_y}FAIL{_r} ({len(vresult.errors)} error(s))")
                     for err in vresult.errors:
                         issues.append(f"    {err.field}: {err.message}")
-                        typer.echo(f"    {err.field}: {err.message}")
+                        typer.echo(f"    {_y}{err.field}{_r}: {err.message}")
 
     if issues:
         raise typer.Exit(code=1)
 
-    typer.echo("Validation complete.")
+    typer.echo(f"\n{_g}Validation complete.{_r}")
     raise typer.Exit(code=0)
 
 

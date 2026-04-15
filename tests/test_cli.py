@@ -884,7 +884,7 @@ workflow = Workflow(
         )
         _clean_module("out_contract_wf")
         assert result.exit_code == 0
-        assert "output contract defined" in result.output
+        assert "output contract" in result.output
 
     def test_validate_step_with_input_contract_only(
         self, runner: CliRunner, tmp_path: Path
@@ -911,7 +911,7 @@ workflow = Workflow(
         )
         _clean_module("in_contract_wf")
         assert result.exit_code == 0
-        assert "input contract defined" in result.output
+        assert "input contract" in result.output
 
     def test_validate_step_with_both_contracts(self, runner: CliRunner, tmp_path: Path) -> None:
         """validate reports both contracts on a step (line 492)."""
@@ -943,7 +943,7 @@ workflow = Workflow(
         )
         _clean_module("both_contract_wf")
         assert result.exit_code == 0
-        assert "input/output contracts defined" in result.output
+        assert "input/output contracts" in result.output
 
     def test_validate_with_input_and_input_contract_passes(
         self, runner: CliRunner, tmp_path: Path
