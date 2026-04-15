@@ -63,6 +63,9 @@ dev = [
 ]
 all = ["kairos-ai[pydantic,cli,anthropic,openai,gemini]"]
 
+[project.scripts]
+kairos = "kairos.cli:main"
+
 [project.urls]
 Homepage = "https://github.com/govanxa/kairos"
 Documentation = "https://github.com/govanxa/kairos/blob/main/GETTING_STARTED.md"
@@ -98,6 +101,7 @@ ignore = [
 [tool.ruff.lint.per-file-ignores]
 "tests/**/*.py" = ["S101", "S105", "S106", "T20"]  # allow assert, hardcoded passwords (test fixtures), and print in tests
 "examples/**/*.py" = ["T20", "S101"]  # allow print and assert in examples
+"kairos/cli.py" = ["T20", "A002", "E402"]  # allow print, built-in shadowing, import order (try/except guard)
 
 [tool.mypy]
 python_version = "3.11"
@@ -113,6 +117,15 @@ no_implicit_optional = true
 # absent but flagged as unused when it's installed. Suppress that per-module.
 [[tool.mypy.overrides]]
 module = "kairos.schema"
+warn_unused_ignores = false
+
+# typer is optional — may not be installed in CI or minimal environments.
+# The CLI module imports typer unconditionally (for Pylance compatibility)
+# but mypy may not find it. Suppress import and untyped-decorator errors.
+[[tool.mypy.overrides]]
+module = "kairos.cli"
+ignore_missing_imports = true
+disallow_untyped_decorators = false
 warn_unused_ignores = false
 
 [tool.pytest.ini_options]

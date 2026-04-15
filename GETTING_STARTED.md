@@ -862,6 +862,139 @@ file_sink = FileSink("runs/output.json")
 
 ---
 
+## 12. CLI Runner
+
+Kairos includes a command-line interface for running and validating workflows without writing a runner script. The CLI is an optional dependency.
+
+### Install the CLI
+
+```bash
+pip install kairos-ai[cli]
+```
+
+This installs [typer](https://typer.tiangolo.com/) as the CLI framework. The core SDK continues to work without it.
+
+### `kairos run` — Execute a Workflow
+
+The `kairos run` command loads a Python module, finds a module-level `workflow` variable (a `Workflow` instance), and executes it.
+
+Create a file called `my_workflow.py`:
+
+```python
+from kairos import Workflow, Step, StepContext
+
+def greet(ctx: StepContext) -> str:
+    name = ctx.state.get("name", "World")
+    return f"Hello, {name}!"
+
+def shout(ctx: StepContext) -> str:
+    greeting = ctx.inputs["greet"]
+    return greeting.upper()
+
+workflow = Workflow(
+    name="hello",
+    steps=[
+        Step(name="greet", action=greet),
+        Step(name="shout", action=shout, depends_on=["greet"]),
+    ],
+)
+```
+
+Run it:
+
+```bash
+kairos run my_workflow.py
+```
+
+#### Passing input data
+
+Use `--input` for inline JSON or `--input-file` for a JSON file:
+
+```bash
+# Inline JSON
+kairos run my_workflow.py --input '{"name": "Kairos"}'
+
+# From a file
+kairos run my_workflow.py --input-file inputs.json
+```
+
+The JSON is parsed via `json.loads()` only — never `eval()`. This is a security requirement.
+
+#### Controlling allowed directories
+
+By default, the CLI only imports modules from the **current working directory**. To allow additional directories:
+
+```bash
+# Via command-line flag
+kairos run my_workflow.py --workflows-dir /path/to/workflows
+
+# Via environment variable
+export KAIROS_WORKFLOWS_DIR=/path/to/workflows
+kairos run my_workflow.py
+```
+
+Both CWD and any explicitly specified directories are allowed. The module's resolved file path (via `os.path.realpath()`) must be contained within one of these directories. This prevents importing arbitrary modules from the system (security requirement S13).
+
+#### Logging options
+
+```bash
+# Verbose output (VERBOSE verbosity level)
+kairos run my_workflow.py --verbose
+
+# JSON log format instead of human-readable
+kairos run my_workflow.py --log-format json
+
+# Write logs to a file
+kairos run my_workflow.py --log-file runs/output.jsonl
+```
+
+The CLI automatically injects a `RunLogger` into the workflow using `Workflow.add_hook()`. Sensitive keys are redacted in all log output.
+
+#### Exit codes
+
+| Code | Meaning |
+|------|---------|
+| 0 | Workflow completed successfully |
+| 1 | Workflow failed (step failure, validation failure, etc.) |
+| 2 | CLI error (bad arguments, module not found, import error) |
+
+### `kairos validate` — Dry-Run Validation
+
+Validate a workflow's plan and contracts without executing it:
+
+```bash
+kairos validate my_workflow.py
+```
+
+This reports:
+- Step count and dependency structure
+- Contract status per step (which steps have input/output contracts)
+- Optional input validation (if `--input` or `--input-file` is provided)
+
+Use this to catch configuration errors before running a workflow.
+
+### `kairos version` — Print SDK Version
+
+```bash
+kairos version
+```
+
+### Module discovery convention
+
+The CLI looks for a module-level variable named `workflow` (a `Workflow` instance) in the loaded module. If no `workflow` variable is found, the CLI exits with an error.
+
+```python
+# my_workflow.py
+from kairos import Workflow, Step
+
+workflow = Workflow(  # <-- the CLI finds this
+    name="example",
+    steps=[Step(name="step1", action=my_fn)],
+)
+```
+
+---
+
 ## Next Steps
 
 - **Run the examples** in the `examples/` directory to see more patterns
@@ -898,3 +1031,6 @@ file_sink = FileSink("runs/output.json")
 | `FileSink` | `from kairos import FileSink` | Complete RunLog as single JSON file |
 | `CallbackSink` | `from kairos import CallbackSink` | Forward events to your callback |
 | `LogSink` | `from kairos import LogSink` | Protocol for custom sink implementations |
+| `kairos run` | CLI: `kairos run module.py` | Execute a workflow from the command line |
+| `kairos validate` | CLI: `kairos validate module.py` | Dry-run validation without execution |
+| `kairos version` | CLI: `kairos version` | Print SDK version |

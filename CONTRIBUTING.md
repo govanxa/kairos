@@ -47,7 +47,7 @@ ruff format kairos/ tests/
 
 ```
 kairos/           Source code (12 core modules + adapters)
-tests/            Test suite (1,062+ tests)
+tests/            Test suite (1,244+ tests)
 examples/         Runnable examples
 .github/          CI/CD workflows
 ```

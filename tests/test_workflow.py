@@ -837,3 +837,80 @@ class TestWorkflowConcurrency:
         d = wf.to_dict()
         assert "max_concurrency" in d
         assert d["max_concurrency"] is None
+
+
+# ---------------------------------------------------------------------------
+# Group 10: add_hook() method
+# ---------------------------------------------------------------------------
+
+
+class TestAddHook:
+    def test_add_hook_appends_to_hooks(self) -> None:
+        """add_hook() appends the given ExecutorHooks to the internal hooks list."""
+        from kairos import ExecutorHooks
+
+        wf = Workflow(name="wf", steps=[Step(name="s", action=_noop)])
+        hook = ExecutorHooks()
+        wf.add_hook(hook)
+        # Re-run with the hook — if no error, the hook was registered
+        result = wf.run()
+        assert result.status == WorkflowStatus.COMPLETE
+
+    def test_add_hook_invoked_during_run(self) -> None:
+        """Hooks added via add_hook() receive lifecycle events during run()."""
+        from kairos import ExecutorHooks
+        from kairos.plan import TaskGraph
+
+        events: list[str] = []
+
+        class _TrackingHook(ExecutorHooks):
+            def on_workflow_start(self, graph: TaskGraph) -> None:  # type: ignore[override]
+                events.append("workflow_start")
+
+        wf = Workflow(name="wf", steps=[Step(name="s", action=_noop)])
+        wf.add_hook(_TrackingHook())
+        wf.run()
+        assert "workflow_start" in events
+
+    def test_add_multiple_hooks(self) -> None:
+        """Multiple calls to add_hook() register multiple hooks, all invoked."""
+        from kairos import ExecutorHooks
+        from kairos.plan import TaskGraph
+
+        counts: list[int] = [0, 0]
+
+        class _HookA(ExecutorHooks):
+            def on_workflow_start(self, graph: TaskGraph) -> None:  # type: ignore[override]
+                counts[0] += 1
+
+        class _HookB(ExecutorHooks):
+            def on_workflow_start(self, graph: TaskGraph) -> None:  # type: ignore[override]
+                counts[1] += 1
+
+        wf = Workflow(name="wf", steps=[Step(name="s", action=_noop)])
+        wf.add_hook(_HookA())
+        wf.add_hook(_HookB())
+        wf.run()
+        assert counts[0] == 1
+        assert counts[1] == 1
+
+    def test_add_hook_does_not_affect_previous_runs(self) -> None:
+        """Hooks added after one run only affect subsequent runs."""
+        from kairos import ExecutorHooks
+        from kairos.plan import TaskGraph
+
+        start_events: list[int] = [0]
+
+        class _CountingHook(ExecutorHooks):
+            def on_workflow_start(self, graph: TaskGraph) -> None:  # type: ignore[override]
+                start_events[0] += 1
+
+        wf = Workflow(name="wf", steps=[Step(name="s", action=_noop)])
+        # First run — no hook yet
+        wf.run()
+        assert start_events[0] == 0
+
+        # Add hook, then run again
+        wf.add_hook(_CountingHook())
+        wf.run()
+        assert start_events[0] == 1
