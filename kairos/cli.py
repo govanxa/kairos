@@ -240,8 +240,14 @@ def _load_workflow_from_module(module_path: str, workflows_dir: str | None) -> W
             f"got {type(workflow_obj).__name__!r}."
         )
 
-    # Step 8 — audit log
-    print(f"Loading workflow from: {module_file}", file=sys.stderr)  # noqa: T20
+    # Step 8 — audit log (dim gray if terminal, plain if piped)
+    if hasattr(sys.stderr, "isatty") and sys.stderr.isatty():
+        print(  # noqa: T20
+            f"\033[2mLoading workflow from: {module_file}\033[0m",
+            file=sys.stderr,
+        )
+    else:
+        print(f"Loading workflow from: {module_file}", file=sys.stderr)  # noqa: T20
 
     return workflow_obj
 
@@ -425,10 +431,11 @@ def run(
         raise typer.Exit(code=1) from None
 
     if result.status == WorkflowStatus.COMPLETE:
-        typer.echo(f"Workflow '{workflow.name}' completed successfully.")
+        typer.echo(f"\033[32mWorkflow '{workflow.name}' completed successfully.\033[0m")
         raise typer.Exit(code=0)
     else:
-        typer.echo(f"Workflow '{workflow.name}' failed (status={result.status}).", err=True)
+        msg = f"\033[31mWorkflow '{workflow.name}' failed (status={result.status}).\033[0m"
+        typer.echo(msg, err=True)
         raise typer.Exit(code=1)
 
 
