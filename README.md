@@ -331,17 +331,17 @@ python examples/scoped_state.py
 
 ## Architecture
 
-Kairos is built as a single MVP phase combining the Core Engine and Validation Layer:
-
-| Module | Purpose |
-|---|---|
-| **Plan Decomposer** | Structured task graph with dependency resolution |
-| **Step Executor** | Step lifecycle with timeout, retry (with jitter), and foreach fan-out |
-| **State Store** | Scoped key-value store with size limits and sensitive key redaction |
-| **Schema Registry** | Input/output contracts per step (Kairos DSL, Pydantic, JSON Schema) |
-| **Validation Engine** | Structural and semantic validation between steps |
-| **Failure Router** | Policy-driven recovery: retry, re-plan, skip, abort |
-| **Run Logger** | Structured event logging with pluggable sinks and verbosity levels |
+| Layer | Module | Purpose |
+|---|---|---|
+| **Core Engine** | Plan Decomposer | Structured task graph with dependency resolution |
+| | Step Executor | Step lifecycle with timeout, retry (with jitter), foreach fan-out, concurrent execution |
+| | State Store | Scoped key-value store with size limits, sensitive key redaction, thread-safe |
+| **Validation** | Schema Registry | Input/output contracts per step (Kairos DSL, Pydantic, JSON Schema) |
+| | Validation Engine | Structural and semantic validation between steps |
+| | Failure Router | Policy-driven recovery: retry, re-plan, skip, abort |
+| **Adapters** | Model Adapters | Claude, OpenAI, Gemini + any OpenAI-compatible provider |
+| **Observability** | Run Logger | Structured event logging with pluggable sinks and verbosity levels |
+| | CLI Runner | `kairos run`, `kairos validate`, `kairos version` with S13 module import security |
 
 ---
 
@@ -403,6 +403,7 @@ pip install -e ".[dev]"
 | `examples/real_openai_concurrent.py` | **Concurrent execution** — 4 parallel OpenAI evaluation tracks + go/no-go recommendation |
 | `examples/run_logger.py` | **Run Logger** — all 4 sinks, verbosity levels, sensitive key redaction, RunLog inspection (no API keys needed) |
 | `examples/real_claude_logged.py` | **Run Logger + Claude** — concurrent Claude API calls with live lifecycle logging and RunLog inspection |
+| `examples/cli_workflow.py` | **CLI Runner** — designed for `kairos run`/`kairos validate`, no `__main__` block needed (no API keys needed) |
 
 ---
 

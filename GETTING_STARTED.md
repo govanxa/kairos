@@ -866,6 +866,8 @@ file_sink = FileSink("runs/output.json")
 
 Kairos includes a command-line interface for running and validating workflows without writing a runner script. The CLI is an optional dependency.
 
+> **Try it now:** Run `kairos run examples.cli_workflow --input '{"topic": "AI safety"}'` for a ready-made example. See `examples/cli_workflow.py` for the source.
+
 ### Install the CLI
 
 ```bash
