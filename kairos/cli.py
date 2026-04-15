@@ -49,7 +49,7 @@ _ENV_VAR = "KAIROS_WORKFLOWS_DIR"
 # ANSI escape codes used by the inspect command (duplicated from ConsoleSink deliberately
 # — no coupling between inspect output and the logger module).
 _ANSI_RESET = "\033[0m"
-_ANSI_DIM = "\033[2m"
+_ANSI_DIM = "\033[90m"  # bright-black (gray) — better cross-terminal support than \033[2m
 _ANSI_BOLD = "\033[1m"
 _ANSI_CYAN = "\033[36m"
 _ANSI_YELLOW = "\033[33m"
