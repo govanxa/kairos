@@ -1,9 +1,16 @@
 """Example workflow designed to be run via the Kairos CLI.
 
-This module exports a ``workflow`` variable — the convention the CLI expects.
+This module exports a ``workflow`` variable -- the convention the CLI expects.
 No ``if __name__`` block needed. Just run:
 
-    kairos run examples.cli_workflow --input '{"topic": "AI safety"}'
+    Bash (Linux/macOS):
+        kairos run examples.cli_workflow --input '{"topic": "AI safety"}'
+
+    PowerShell (Windows):
+        kairos run examples.cli_workflow --input '{""topic"": ""AI safety""}'
+
+    Any OS (using input file):
+        kairos run examples.cli_workflow --input-file input.json
 
 Or validate without executing:
 
@@ -15,7 +22,7 @@ Or run with verbose logging:
 
 Or output structured logs to a file:
 
-    kairos run examples.cli_workflow --input '{"topic": "AI safety"}' \
+    kairos run examples.cli_workflow --input '{"topic": "AI safety"}' \\
         --log-format jsonl --log-file ./logs
 """
 
