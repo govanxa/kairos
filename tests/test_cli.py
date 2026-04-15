@@ -1008,3 +1008,937 @@ workflow = Workflow(
         _clean_module("validate_fail_wf")
         assert result.exit_code != 0
         assert "Input validation: FAIL" in result.output
+
+
+# ===========================================================================
+# inspect command — Fixtures
+# ===========================================================================
+
+
+@pytest.fixture()
+def sample_events() -> list[dict[str, object]]:
+    """A complete, well-formed list of log events for a single run."""
+    return [
+        {
+            "timestamp": "2024-01-15T10:00:00+00:00",
+            "event_type": "workflow_start",
+            "step_id": None,
+            "data": {
+                "workflow_name": "my_workflow",
+                "run_id": "abcd1234-5678-90ab-cdef-1234567890ab",
+                "total_steps": 2,
+            },
+            "level": "LogLevel.info",
+        },
+        {
+            "timestamp": "2024-01-15T10:00:01+00:00",
+            "event_type": "step_start",
+            "step_id": "step_one",
+            "data": {"step_id": "step_one", "attempt": 1},
+            "level": "LogLevel.info",
+        },
+        {
+            "timestamp": "2024-01-15T10:00:02+00:00",
+            "event_type": "step_complete",
+            "step_id": "step_one",
+            "data": {"step_id": "step_one", "duration_ms": 150.5},
+            "level": "LogLevel.info",
+        },
+        {
+            "timestamp": "2024-01-15T10:00:03+00:00",
+            "event_type": "step_start",
+            "step_id": "step_two",
+            "data": {"step_id": "step_two", "attempt": 1},
+            "level": "LogLevel.info",
+        },
+        {
+            "timestamp": "2024-01-15T10:00:04+00:00",
+            "event_type": "step_complete",
+            "step_id": "step_two",
+            "data": {"step_id": "step_two", "duration_ms": 200.0},
+            "level": "LogLevel.info",
+        },
+        {
+            "timestamp": "2024-01-15T10:00:05+00:00",
+            "event_type": "workflow_complete",
+            "step_id": None,
+            "data": {
+                "status": "complete",
+                "summary": {
+                    "total_steps": 2,
+                    "completed_steps": 2,
+                    "failed_steps": 0,
+                    "skipped_steps": 0,
+                    "total_duration_ms": 350.5,
+                },
+            },
+            "level": "LogLevel.info",
+        },
+    ]
+
+
+@pytest.fixture()
+def sample_jsonl_file(tmp_path: Path, sample_events: list[dict[str, object]]) -> Path:
+    """Write sample_events to a .jsonl file and return the path."""
+    import json
+
+    jsonl_path = tmp_path / "run_abcd1234.jsonl"
+    lines = [json.dumps(e) for e in sample_events]
+    jsonl_path.write_text("\n".join(lines), encoding="utf-8")
+    return jsonl_path
+
+
+@pytest.fixture()
+def sample_jsonl_with_failures(tmp_path: Path) -> Path:
+    """Write a .jsonl file that includes a step_fail event."""
+    import json
+
+    events = [
+        {
+            "timestamp": "2024-01-15T10:00:00+00:00",
+            "event_type": "workflow_start",
+            "step_id": None,
+            "data": {
+                "workflow_name": "fail_wf",
+                "run_id": "beef0001-0002-0003-0004-000000000005",
+                "total_steps": 1,
+            },
+            "level": "LogLevel.info",
+        },
+        {
+            "timestamp": "2024-01-15T10:00:01+00:00",
+            "event_type": "step_fail",
+            "step_id": "bad_step",
+            "data": {
+                "step_id": "bad_step",
+                "error_type": "RuntimeError",
+                "error_message": "something went wrong",
+            },
+            "level": "LogLevel.error",
+        },
+        {
+            "timestamp": "2024-01-15T10:00:02+00:00",
+            "event_type": "workflow_complete",
+            "step_id": None,
+            "data": {
+                "status": "failed",
+                "summary": {
+                    "total_steps": 1,
+                    "completed_steps": 0,
+                    "failed_steps": 1,
+                    "skipped_steps": 0,
+                    "total_duration_ms": 50.0,
+                },
+            },
+            "level": "LogLevel.error",
+        },
+    ]
+    jsonl_path = tmp_path / "fail_run.jsonl"
+    lines = [json.dumps(e) for e in events]
+    jsonl_path.write_text("\n".join(lines), encoding="utf-8")
+    return jsonl_path
+
+
+@pytest.fixture()
+def empty_jsonl_file(tmp_path: Path) -> Path:
+    """Write an empty .jsonl file."""
+    p = tmp_path / "empty_run.jsonl"
+    p.write_text("", encoding="utf-8")
+    return p
+
+
+@pytest.fixture()
+def malformed_jsonl_file(tmp_path: Path) -> Path:
+    """Write a .jsonl file with one valid event and one malformed line."""
+    import json
+
+    good = {
+        "timestamp": "2024-01-15T10:00:00+00:00",
+        "event_type": "workflow_start",
+        "step_id": None,
+        "data": {"workflow_name": "wf", "run_id": "aaa", "total_steps": 1},
+        "level": "LogLevel.info",
+    }
+    jsonl_path = tmp_path / "malformed_run.jsonl"
+    jsonl_path.write_text(json.dumps(good) + "\n{not valid json\n", encoding="utf-8")
+    return jsonl_path
+
+
+# ===========================================================================
+# inspect command — Group 1: Failure Paths
+# ===========================================================================
+
+
+class TestInspectFailurePaths:
+    def test_nonexistent_path_exits_nonzero(self, runner: CliRunner, tmp_path: Path) -> None:
+        """inspect with a path that doesn't exist exits non-zero."""
+        app = _get_app()
+        result = runner.invoke(app, ["inspect", str(tmp_path / "ghost.jsonl")])
+        assert result.exit_code != 0
+
+    def test_non_jsonl_extension_exits_nonzero(self, runner: CliRunner, tmp_path: Path) -> None:
+        """inspect with a .json file (not .jsonl) exits non-zero."""
+        bad_file = tmp_path / "run.json"
+        bad_file.write_text("{}", encoding="utf-8")
+        app = _get_app()
+        result = runner.invoke(app, ["inspect", str(bad_file)])
+        assert result.exit_code != 0
+
+    def test_empty_file_exits_nonzero(self, runner: CliRunner, empty_jsonl_file: Path) -> None:
+        """inspect on an empty .jsonl file exits non-zero (no valid events)."""
+        app = _get_app()
+        result = runner.invoke(app, ["inspect", str(empty_jsonl_file)])
+        assert result.exit_code != 0
+
+    def test_directory_with_no_jsonl_exits_nonzero(self, runner: CliRunner, tmp_path: Path) -> None:
+        """inspect on a directory containing no .jsonl files exits non-zero."""
+        app = _get_app()
+        result = runner.invoke(app, ["inspect", str(tmp_path)])
+        assert result.exit_code != 0
+
+    def test_step_filter_no_match_exits_nonzero(
+        self, runner: CliRunner, sample_jsonl_file: Path
+    ) -> None:
+        """inspect --step nonexistent exits non-zero (no events match)."""
+        app = _get_app()
+        result = runner.invoke(app, ["inspect", str(sample_jsonl_file), "--step", "no_such_step"])
+        assert result.exit_code != 0
+
+    def test_failures_filter_no_failures_exits_zero(
+        self, runner: CliRunner, sample_jsonl_file: Path
+    ) -> None:
+        """inspect --failures on a run with no failures exits 0 (nothing to show is OK)."""
+        app = _get_app()
+        result = runner.invoke(app, ["inspect", str(sample_jsonl_file), "--failures"])
+        # No failures = we still show the header but 0 events; exit 0 is fine
+        assert result.exit_code == 0
+
+    def test_malformed_lines_skipped_not_fatal(
+        self, runner: CliRunner, malformed_jsonl_file: Path
+    ) -> None:
+        """inspect skips malformed JSON lines but does not crash."""
+        app = _get_app()
+        result = runner.invoke(app, ["inspect", str(malformed_jsonl_file)])
+        # One good event exists — should not exit with crash code
+        # (may exit non-zero if only one event and no workflow_complete)
+        assert result.exception is None or isinstance(result.exception, SystemExit)
+
+
+# ===========================================================================
+# inspect command — Group 2: Boundary Conditions
+# ===========================================================================
+
+
+class TestInspectBoundaryConditions:
+    def test_single_event_file_no_workflow_complete(
+        self, runner: CliRunner, tmp_path: Path
+    ) -> None:
+        """A .jsonl with only a workflow_start (no workflow_complete) shows 'incomplete'."""
+        import json
+
+        p = tmp_path / "partial.jsonl"
+        event = {
+            "timestamp": "2024-01-15T10:00:00+00:00",
+            "event_type": "workflow_start",
+            "step_id": None,
+            "data": {"workflow_name": "partial_wf", "run_id": "aaaa", "total_steps": 1},
+            "level": "LogLevel.info",
+        }
+        p.write_text(json.dumps(event), encoding="utf-8")
+        app = _get_app()
+        result = runner.invoke(app, ["inspect", str(p)])
+        assert result.exit_code == 0
+        assert "incomplete" in result.output.lower()
+
+    def test_directory_picks_most_recent_jsonl(
+        self, runner: CliRunner, tmp_path: Path, sample_events: list[dict[str, object]]
+    ) -> None:
+        """inspect on a directory target picks the most recently modified .jsonl."""
+        import json
+        import time
+
+        older = tmp_path / "older_run.jsonl"
+        newer = tmp_path / "newer_run.jsonl"
+
+        # Write older file first
+        older.write_text(json.dumps(sample_events[0]), encoding="utf-8")
+        time.sleep(0.05)  # Ensure mtime difference
+        # Write newer file with full events
+        lines = [json.dumps(e) for e in sample_events]
+        newer.write_text("\n".join(lines), encoding="utf-8")
+
+        app = _get_app()
+        result = runner.invoke(app, ["inspect", str(tmp_path)])
+        assert result.exit_code == 0
+        # Should show the content of the newer file (workflow_name = my_workflow)
+        assert "my_workflow" in result.output
+
+    def test_no_color_disables_ansi(self, runner: CliRunner, sample_jsonl_file: Path) -> None:
+        """--no-color produces output with no ANSI escape sequences."""
+        app = _get_app()
+        result = runner.invoke(app, ["inspect", str(sample_jsonl_file), "--no-color"])
+        assert result.exit_code == 0
+        assert "\033[" not in result.output
+
+    def test_failures_and_step_combined(
+        self, runner: CliRunner, sample_jsonl_with_failures: Path
+    ) -> None:
+        """--failures and --step can be combined to narrow results."""
+        app = _get_app()
+        result = runner.invoke(
+            app,
+            [
+                "inspect",
+                str(sample_jsonl_with_failures),
+                "--failures",
+                "--step",
+                "bad_step",
+            ],
+        )
+        assert result.exit_code == 0
+
+    def test_missing_workflow_complete_status_is_incomplete(
+        self, runner: CliRunner, tmp_path: Path
+    ) -> None:
+        """When workflow_complete is absent, extracted status is 'incomplete'."""
+        from kairos.cli import _inspect_extract_summary  # type: ignore[import]
+
+        events: list[dict[str, object]] = [
+            {
+                "timestamp": "2024-01-15T10:00:00+00:00",
+                "event_type": "workflow_start",
+                "step_id": None,
+                "data": {"workflow_name": "wf", "run_id": "abc", "total_steps": 1},
+                "level": "LogLevel.info",
+            },
+        ]
+        summary = _inspect_extract_summary(events)
+        assert summary["status"] == "incomplete"
+
+
+# ===========================================================================
+# inspect command — Group 3: Happy Paths
+# ===========================================================================
+
+
+class TestInspectHappyPaths:
+    def test_basic_inspect_exits_zero(self, runner: CliRunner, sample_jsonl_file: Path) -> None:
+        """inspect on a valid .jsonl file exits 0."""
+        app = _get_app()
+        result = runner.invoke(app, ["inspect", str(sample_jsonl_file)])
+        assert result.exit_code == 0
+
+    def test_header_contains_workflow_name(
+        self, runner: CliRunner, sample_jsonl_file: Path
+    ) -> None:
+        """inspect output header contains the workflow name."""
+        app = _get_app()
+        result = runner.invoke(app, ["inspect", str(sample_jsonl_file), "--no-color"])
+        assert result.exit_code == 0
+        assert "my_workflow" in result.output
+
+    def test_header_contains_run_id_prefix(
+        self, runner: CliRunner, sample_jsonl_file: Path
+    ) -> None:
+        """inspect output header contains the first 8 chars of the run_id."""
+        app = _get_app()
+        result = runner.invoke(app, ["inspect", str(sample_jsonl_file), "--no-color"])
+        assert result.exit_code == 0
+        assert "abcd1234" in result.output
+
+    def test_header_contains_status(self, runner: CliRunner, sample_jsonl_file: Path) -> None:
+        """inspect output header contains the workflow status."""
+        app = _get_app()
+        result = runner.invoke(app, ["inspect", str(sample_jsonl_file), "--no-color"])
+        assert result.exit_code == 0
+        assert "complete" in result.output.lower()
+
+    def test_header_contains_step_counts(self, runner: CliRunner, sample_jsonl_file: Path) -> None:
+        """inspect output header shows N/M completed steps."""
+        app = _get_app()
+        result = runner.invoke(app, ["inspect", str(sample_jsonl_file), "--no-color"])
+        assert result.exit_code == 0
+        assert "2/2" in result.output
+
+    def test_header_contains_duration(self, runner: CliRunner, sample_jsonl_file: Path) -> None:
+        """inspect output header contains duration in ms."""
+        app = _get_app()
+        result = runner.invoke(app, ["inspect", str(sample_jsonl_file), "--no-color"])
+        assert result.exit_code == 0
+        assert "350" in result.output or "ms" in result.output
+
+    def test_event_timeline_present(self, runner: CliRunner, sample_jsonl_file: Path) -> None:
+        """inspect shows event type names in the timeline."""
+        app = _get_app()
+        result = runner.invoke(app, ["inspect", str(sample_jsonl_file), "--no-color"])
+        assert result.exit_code == 0
+        assert "workflow_start" in result.output or "step_start" in result.output
+
+    def test_failures_filter_shows_only_errors(
+        self, runner: CliRunner, sample_jsonl_with_failures: Path
+    ) -> None:
+        """--failures shows error-level events and not info-level step events."""
+        app = _get_app()
+        result = runner.invoke(
+            app, ["inspect", str(sample_jsonl_with_failures), "--failures", "--no-color"]
+        )
+        assert result.exit_code == 0
+        assert "step_fail" in result.output
+        # step_start is info-level — should not appear
+        assert "step_start" not in result.output
+
+    def test_step_filter_shows_matching_step(
+        self, runner: CliRunner, sample_jsonl_file: Path
+    ) -> None:
+        """--step step_one shows events for step_one."""
+        app = _get_app()
+        result = runner.invoke(
+            app, ["inspect", str(sample_jsonl_file), "--step", "step_one", "--no-color"]
+        )
+        assert result.exit_code == 0
+        assert "step_one" in result.output
+
+    def test_step_filter_excludes_other_steps(
+        self, runner: CliRunner, sample_jsonl_file: Path
+    ) -> None:
+        """--step step_one excludes events for step_two."""
+        app = _get_app()
+        result = runner.invoke(
+            app, ["inspect", str(sample_jsonl_file), "--step", "step_one", "--no-color"]
+        )
+        assert result.exit_code == 0
+        assert "step_two" not in result.output
+
+    def test_directory_target_exits_zero(self, runner: CliRunner, sample_jsonl_file: Path) -> None:
+        """inspect on a directory containing a .jsonl exits 0."""
+        app = _get_app()
+        result = runner.invoke(app, ["inspect", str(sample_jsonl_file.parent)])
+        assert result.exit_code == 0
+
+    def test_failure_run_shows_failed_status(
+        self, runner: CliRunner, sample_jsonl_with_failures: Path
+    ) -> None:
+        """inspect on a failed run shows 'failed' in header status."""
+        app = _get_app()
+        result = runner.invoke(app, ["inspect", str(sample_jsonl_with_failures), "--no-color"])
+        assert result.exit_code == 0
+        assert "failed" in result.output.lower()
+
+
+# ===========================================================================
+# inspect command — Group 4: Security
+# ===========================================================================
+
+
+class TestInspectSecurity:
+    def test_only_json_loads_for_parsing(self, tmp_path: Path) -> None:
+        """_inspect_read_events uses json.loads, never eval(). Injection payload parsed safely."""
+        import json
+
+        from kairos.cli import _inspect_read_events  # type: ignore[import]
+
+        evil_event = {
+            "timestamp": "2024-01-15T10:00:00+00:00",
+            "event_type": "workflow_start",
+            "step_id": None,
+            "data": {"__import__": "os", "workflow_name": "evil"},
+            "level": "LogLevel.info",
+        }
+        p = tmp_path / "evil.jsonl"
+        p.write_text(json.dumps(evil_event), encoding="utf-8")
+
+        events = _inspect_read_events(p)
+        # The result must be the parsed dict, not the result of code execution
+        assert isinstance(events[0], dict)
+        assert events[0]["data"]["__import__"] == "os"  # type: ignore[index]
+
+    def test_jsonl_extension_enforced(self, tmp_path: Path) -> None:
+        """_inspect_resolve_jsonl_path rejects a file without .jsonl extension."""
+        from kairos.cli import _inspect_resolve_jsonl_path  # type: ignore[import]
+        from kairos.exceptions import ConfigError
+
+        bad = tmp_path / "run.log"
+        bad.write_text("{}", encoding="utf-8")
+
+        with pytest.raises(ConfigError):
+            _inspect_resolve_jsonl_path(str(bad))
+
+    def test_nonexistent_path_raises_config_error(self, tmp_path: Path) -> None:
+        """_inspect_resolve_jsonl_path raises ConfigError for non-existent path."""
+        from kairos.cli import _inspect_resolve_jsonl_path  # type: ignore[import]
+        from kairos.exceptions import ConfigError
+
+        with pytest.raises(ConfigError):
+            _inspect_resolve_jsonl_path(str(tmp_path / "nope.jsonl"))
+
+
+# ===========================================================================
+# inspect command — Group 5: Helper Unit Tests
+# ===========================================================================
+
+
+class TestInspectHelpers:
+    def test_resolve_jsonl_path_file(self, sample_jsonl_file: Path) -> None:
+        """_inspect_resolve_jsonl_path returns the path for a direct .jsonl file."""
+        from kairos.cli import _inspect_resolve_jsonl_path  # type: ignore[import]
+
+        result = _inspect_resolve_jsonl_path(str(sample_jsonl_file))
+        assert result == sample_jsonl_file.resolve()
+
+    def test_resolve_jsonl_path_directory(self, tmp_path: Path, sample_jsonl_file: Path) -> None:
+        """_inspect_resolve_jsonl_path returns the .jsonl file in a directory."""
+        from kairos.cli import _inspect_resolve_jsonl_path  # type: ignore[import]
+
+        result = _inspect_resolve_jsonl_path(str(tmp_path))
+        assert result.suffix == ".jsonl"
+
+    def test_read_events_returns_list(self, sample_jsonl_file: Path) -> None:
+        """_inspect_read_events returns a list of dicts from a .jsonl file."""
+        from kairos.cli import _inspect_read_events  # type: ignore[import]
+
+        events = _inspect_read_events(sample_jsonl_file)
+        assert isinstance(events, list)
+        assert len(events) == 6
+        assert all(isinstance(e, dict) for e in events)
+
+    def test_read_events_skips_malformed_lines(self, malformed_jsonl_file: Path) -> None:
+        """_inspect_read_events skips malformed lines and returns valid events."""
+        from kairos.cli import _inspect_read_events  # type: ignore[import]
+
+        events = _inspect_read_events(malformed_jsonl_file)
+        assert len(events) == 1
+
+    def test_extract_summary_complete_run(self, sample_events: list[dict[str, object]]) -> None:
+        """_inspect_extract_summary extracts all fields from a complete run."""
+        from kairos.cli import _inspect_extract_summary  # type: ignore[import]
+
+        summary = _inspect_extract_summary(sample_events)
+        assert summary["workflow_name"] == "my_workflow"
+        assert summary["status"] == "complete"
+        assert summary["completed_steps"] == 2
+        assert summary["failed_steps"] == 0
+
+    def test_extract_summary_uses_workflow_complete_data(
+        self, sample_events: list[dict[str, object]]
+    ) -> None:
+        """_inspect_extract_summary prefers workflow_complete summary data."""
+        from kairos.cli import _inspect_extract_summary  # type: ignore[import]
+
+        summary = _inspect_extract_summary(sample_events)
+        assert summary["total_steps"] == 2
+
+    def test_filter_events_failures_only(self, sample_events: list[dict[str, object]]) -> None:
+        """_inspect_filter_events failures_only keeps only error/warn events + workflow events."""
+        from kairos.cli import _inspect_filter_events  # type: ignore[import]
+
+        filtered = _inspect_filter_events(sample_events, failures_only=True, step_name=None)
+        event_types = [e["event_type"] for e in filtered]
+        # workflow-level events always pass through
+        assert "workflow_start" in event_types or "workflow_complete" in event_types
+        # info step events should be excluded
+        assert "step_start" not in event_types
+        assert "step_complete" not in event_types
+
+    def test_filter_events_step_name(self, sample_events: list[dict[str, object]]) -> None:
+        """_inspect_filter_events with step_name keeps only that step's events + workflow events."""
+        from kairos.cli import _inspect_filter_events  # type: ignore[import]
+
+        filtered = _inspect_filter_events(sample_events, failures_only=False, step_name="step_one")
+        for event in filtered:
+            step_id = event.get("step_id")
+            assert step_id is None or step_id == "step_one"
+
+    def test_filter_events_no_filters(self, sample_events: list[dict[str, object]]) -> None:
+        """_inspect_filter_events with no filters returns all events."""
+        from kairos.cli import _inspect_filter_events  # type: ignore[import]
+
+        filtered = _inspect_filter_events(sample_events, failures_only=False, step_name=None)
+        assert len(filtered) == len(sample_events)
+
+    def test_format_header_contains_name(self, sample_events: list[dict[str, object]]) -> None:
+        """_inspect_format_header includes the workflow name."""
+        from kairos.cli import (  # type: ignore[attr-defined]
+            _inspect_extract_summary,
+            _inspect_format_header,
+        )
+
+        summary = _inspect_extract_summary(sample_events)
+        header = _inspect_format_header(summary, color=False)
+        assert "my_workflow" in header
+
+    def test_format_header_no_ansi_when_color_false(
+        self, sample_events: list[dict[str, object]]
+    ) -> None:
+        """_inspect_format_header with color=False contains no ANSI escapes."""
+        from kairos.cli import (  # type: ignore[attr-defined]
+            _inspect_extract_summary,
+            _inspect_format_header,
+        )
+
+        summary = _inspect_extract_summary(sample_events)
+        header = _inspect_format_header(summary, color=False)
+        assert "\033[" not in header
+
+    def test_format_header_with_ansi_when_color_true(
+        self, sample_events: list[dict[str, object]]
+    ) -> None:
+        """_inspect_format_header with color=True contains ANSI escapes."""
+        from kairos.cli import (  # type: ignore[attr-defined]
+            _inspect_extract_summary,
+            _inspect_format_header,
+        )
+
+        summary = _inspect_extract_summary(sample_events)
+        header = _inspect_format_header(summary, color=True)
+        assert "\033[" in header
+
+    def test_format_event_line_no_ansi_when_color_false(
+        self, sample_events: list[dict[str, object]]
+    ) -> None:
+        """_inspect_format_event_line with color=False contains no ANSI escapes."""
+        from kairos.cli import _inspect_format_event_line  # type: ignore[import]
+
+        line = _inspect_format_event_line(sample_events[0], color=False)
+        assert "\033[" not in line
+
+    def test_format_event_line_contains_event_type(
+        self, sample_events: list[dict[str, object]]
+    ) -> None:
+        """_inspect_format_event_line includes the event_type in output."""
+        from kairos.cli import _inspect_format_event_line  # type: ignore[import]
+
+        line = _inspect_format_event_line(sample_events[0], color=False)
+        assert "workflow_start" in line
+
+    def test_format_event_line_with_ansi_when_color_true(
+        self, sample_events: list[dict[str, object]]
+    ) -> None:
+        """_inspect_format_event_line with color=True contains ANSI escapes."""
+        from kairos.cli import _inspect_format_event_line  # type: ignore[import]
+
+        line = _inspect_format_event_line(sample_events[1], color=True)
+        assert "\033[" in line
+
+    # --- HIGH #2: Missing branch coverage for _inspect_format_event_line ---
+
+    def test_format_event_line_step_retry(self) -> None:
+        """step_retry branch includes step name and attempt number."""
+        from kairos.cli import _inspect_format_event_line  # type: ignore[import]
+
+        event: dict[str, object] = {
+            "timestamp": "2024-01-15T10:00:01+00:00",
+            "event_type": "step_retry",
+            "step_id": "flaky_step",
+            "data": {"step_id": "flaky_step", "attempt": 2},
+            "level": "LogLevel.warn",
+        }
+        line = _inspect_format_event_line(event, color=False)
+        assert "step_retry" in line
+        assert "flaky_step" in line
+        assert "retry" in line
+
+    def test_format_event_line_step_skip(self) -> None:
+        """step_skip branch includes step name and optional reason."""
+        from kairos.cli import _inspect_format_event_line  # type: ignore[import]
+
+        event: dict[str, object] = {
+            "timestamp": "2024-01-15T10:00:02+00:00",
+            "event_type": "step_skip",
+            "step_id": "optional_step",
+            "data": {"step_id": "optional_step", "reason": "dependency failed"},
+            "level": "LogLevel.warn",
+        }
+        line = _inspect_format_event_line(event, color=False)
+        assert "step_skip" in line
+        assert "optional_step" in line
+        assert "skipped" in line
+        assert "dependency failed" in line
+
+    def test_format_event_line_step_skip_no_reason(self) -> None:
+        """step_skip branch without a reason omits the parenthetical."""
+        from kairos.cli import _inspect_format_event_line  # type: ignore[import]
+
+        event: dict[str, object] = {
+            "timestamp": "2024-01-15T10:00:02+00:00",
+            "event_type": "step_skip",
+            "step_id": "optional_step",
+            "data": {"step_id": "optional_step"},
+            "level": "LogLevel.warn",
+        }
+        line = _inspect_format_event_line(event, color=False)
+        assert "skipped" in line
+        assert "(" not in line  # no reason parenthetical
+
+    def test_format_event_line_validation_complete(self) -> None:
+        """validation_complete branch includes step, phase, and 'pass'."""
+        from kairos.cli import _inspect_format_event_line  # type: ignore[import]
+
+        event: dict[str, object] = {
+            "timestamp": "2024-01-15T10:00:03+00:00",
+            "event_type": "validation_complete",
+            "step_id": "step_one",
+            "data": {"step_id": "step_one", "phase": "output"},
+            "level": "LogLevel.info",
+        }
+        line = _inspect_format_event_line(event, color=False)
+        assert "validation_complete" in line
+        assert "step_one" in line
+        assert "output" in line
+        assert "pass" in line
+
+    def test_format_event_line_validation_fail(self) -> None:
+        """validation_fail branch includes step, phase, and 'FAIL'."""
+        from kairos.cli import _inspect_format_event_line  # type: ignore[import]
+
+        event: dict[str, object] = {
+            "timestamp": "2024-01-15T10:00:04+00:00",
+            "event_type": "validation_fail",
+            "step_id": "step_one",
+            "data": {"step_id": "step_one", "phase": "input"},
+            "level": "LogLevel.error",
+        }
+        line = _inspect_format_event_line(event, color=False)
+        assert "validation_fail" in line
+        assert "step_one" in line
+        assert "input" in line
+        assert "FAIL" in line
+
+    def test_format_event_line_validation_start(self) -> None:
+        """validation_start branch includes step and phase."""
+        from kairos.cli import _inspect_format_event_line  # type: ignore[import]
+
+        event: dict[str, object] = {
+            "timestamp": "2024-01-15T10:00:00+00:00",
+            "event_type": "validation_start",
+            "step_id": "step_one",
+            "data": {"step_id": "step_one", "phase": "output"},
+            "level": "LogLevel.info",
+        }
+        line = _inspect_format_event_line(event, color=False)
+        assert "validation_start" in line
+        assert "step_one" in line
+        assert "output" in line
+
+    def test_format_event_line_default_unknown_event(self) -> None:
+        """Default match branch serializes data key=value pairs."""
+        from kairos.cli import _inspect_format_event_line  # type: ignore[import]
+
+        event: dict[str, object] = {
+            "timestamp": "2024-01-15T10:00:00+00:00",
+            "event_type": "custom_event_xyz",
+            "step_id": None,
+            "data": {"foo": "bar", "count": 42},
+            "level": "LogLevel.info",
+        }
+        line = _inspect_format_event_line(event, color=False)
+        assert "custom_event_xyz" in line
+        assert "foo=bar" in line or "count=42" in line
+
+    # --- HIGH #1: Malformed attempt value does not crash ---
+
+    def test_format_event_line_step_start_malformed_attempt(self) -> None:
+        """step_start branch with non-numeric attempt does not raise ValueError."""
+        from kairos.cli import _inspect_format_event_line  # type: ignore[import]
+
+        event: dict[str, object] = {
+            "timestamp": "2024-01-15T10:00:00+00:00",
+            "event_type": "step_start",
+            "step_id": "step_one",
+            "data": {"step_id": "step_one", "attempt": "bad_value"},
+            "level": "LogLevel.info",
+        }
+        # Must not raise — malformed data should produce a safe output
+        line = _inspect_format_event_line(event, color=False)
+        assert "step_start" in line
+        assert "step_one" in line
+
+    def test_format_event_line_step_start_attempt_none(self) -> None:
+        """step_start branch with None attempt does not raise TypeError."""
+        from kairos.cli import _inspect_format_event_line  # type: ignore[import]
+
+        event: dict[str, object] = {
+            "timestamp": "2024-01-15T10:00:00+00:00",
+            "event_type": "step_start",
+            "step_id": "step_one",
+            "data": {"step_id": "step_one", "attempt": None},
+            "level": "LogLevel.info",
+        }
+        line = _inspect_format_event_line(event, color=False)
+        assert "step_start" in line
+
+    # --- MEDIUM #6: Non-dict JSON lines are skipped, not fatal ---
+
+    def test_read_events_skips_non_dict_json_lines(self, tmp_path: Path) -> None:
+        """_inspect_read_events skips valid JSON that is not a dict (e.g. arrays)."""
+        import json
+
+        from kairos.cli import _inspect_read_events  # type: ignore[import]
+
+        good = {
+            "timestamp": "2024-01-15T10:00:00+00:00",
+            "event_type": "workflow_start",
+            "step_id": None,
+            "data": {"workflow_name": "wf", "run_id": "aaa", "total_steps": 1},
+            "level": "LogLevel.info",
+        }
+        # Mix: one good dict, one valid JSON array (not a dict)
+        content = json.dumps(good) + "\n" + json.dumps([1, 2, 3]) + "\n"
+        p = tmp_path / "mixed.jsonl"
+        p.write_text(content, encoding="utf-8")
+
+        events = _inspect_read_events(p)
+        # Only the dict line should be returned; the array line is skipped
+        assert len(events) == 1
+        assert events[0]["event_type"] == "workflow_start"
+
+    # --- HIGH #3: Incomplete-run fallback counting with step events ---
+
+    def test_extract_summary_incomplete_run_with_step_events(self) -> None:
+        """Fallback counting path: workflow_start + step events but no workflow_complete.
+
+        When workflow_complete is absent, _inspect_extract_summary counts
+        step_complete / step_fail / step_skip events directly from the event list.
+        """
+        from kairos.cli import _inspect_extract_summary  # type: ignore[import]
+
+        events: list[dict[str, object]] = [
+            {
+                "timestamp": "2024-01-15T10:00:00+00:00",
+                "event_type": "workflow_start",
+                "step_id": None,
+                "data": {"workflow_name": "partial_wf", "run_id": "xyz", "total_steps": 3},
+                "level": "LogLevel.info",
+            },
+            {
+                "timestamp": "2024-01-15T10:00:01+00:00",
+                "event_type": "step_complete",
+                "step_id": "step_a",
+                "data": {"step_id": "step_a", "duration_ms": 50.0},
+                "level": "LogLevel.info",
+            },
+            {
+                "timestamp": "2024-01-15T10:00:02+00:00",
+                "event_type": "step_fail",
+                "step_id": "step_b",
+                "data": {"step_id": "step_b", "error_type": "RuntimeError"},
+                "level": "LogLevel.error",
+            },
+            {
+                "timestamp": "2024-01-15T10:00:03+00:00",
+                "event_type": "step_skip",
+                "step_id": "step_c",
+                "data": {"step_id": "step_c"},
+                "level": "LogLevel.warn",
+            },
+        ]
+        summary = _inspect_extract_summary(events)
+
+        # Status must be 'incomplete' — no workflow_complete present
+        assert summary["status"] == "incomplete"
+        # Fallback counts must match the step events
+        assert summary["completed_steps"] == 1
+        assert summary["failed_steps"] == 1
+        assert summary["skipped_steps"] == 1
+
+    # --- QA: Additional coverage gap tests ---
+
+    def test_format_event_line_step_start_retry_attempt(self) -> None:
+        """step_start with attempt > 1 appends '(attempt N)' to the detail."""
+        from kairos.cli import _inspect_format_event_line  # type: ignore[import]
+
+        event: dict[str, object] = {
+            "timestamp": "2024-01-15T10:00:00+00:00",
+            "event_type": "step_start",
+            "step_id": "retried_step",
+            "data": {"step_id": "retried_step", "attempt": 3},
+            "level": "LogLevel.info",
+        }
+        line = _inspect_format_event_line(event, color=False)
+        assert "retried_step" in line
+        assert "attempt 3" in line
+
+    def test_format_event_line_workflow_complete_no_summary(self) -> None:
+        """workflow_complete without a summary dict falls back to status string."""
+        from kairos.cli import _inspect_format_event_line  # type: ignore[import]
+
+        event: dict[str, object] = {
+            "timestamp": "2024-01-15T10:00:05+00:00",
+            "event_type": "workflow_complete",
+            "step_id": None,
+            "data": {"status": "complete", "summary": "not-a-dict"},
+            "level": "LogLevel.info",
+        }
+        line = _inspect_format_event_line(event, color=False)
+        assert "workflow_complete" in line
+        assert "complete" in line
+
+    def test_format_header_unknown_status_no_color(self) -> None:
+        """Header with an unknown status value does not crash and shows it plain."""
+        from kairos.cli import _inspect_format_header  # type: ignore[import]
+
+        summary: dict[str, object] = {
+            "workflow_name": "test_wf",
+            "run_id": "abcd1234",
+            "status": "paused",
+            "started_at": "2024-01-15T10:00:00+00:00",
+            "duration_ms": 100.0,
+            "total_steps": 1,
+            "completed_steps": 0,
+            "failed_steps": 0,
+            "skipped_steps": 0,
+        }
+        header = _inspect_format_header(summary, color=False)
+        assert "paused" in header
+
+    def test_format_event_line_non_dict_data_field(self) -> None:
+        """Event with a non-dict 'data' field uses empty dict fallback."""
+        from kairos.cli import _inspect_format_event_line  # type: ignore[import]
+
+        event: dict[str, object] = {
+            "timestamp": "2024-01-15T10:00:00+00:00",
+            "event_type": "workflow_start",
+            "step_id": None,
+            "data": "not-a-dict",
+            "level": "LogLevel.info",
+        }
+        # Must not crash — uses fallback empty dict
+        line = _inspect_format_event_line(event, color=False)
+        assert "workflow_start" in line
+
+    def test_extract_summary_non_dict_data_field(self) -> None:
+        """Event with a non-dict 'data' field uses empty dict fallback in summary."""
+        from kairos.cli import _inspect_extract_summary  # type: ignore[import]
+
+        events: list[dict[str, object]] = [
+            {
+                "timestamp": "2024-01-15T10:00:00+00:00",
+                "event_type": "workflow_start",
+                "step_id": None,
+                "data": 42,  # not a dict
+                "level": "LogLevel.info",
+            },
+        ]
+        summary = _inspect_extract_summary(events)
+        # Should use defaults — workflow_name stays "unknown"
+        assert summary["workflow_name"] == "unknown"
+        assert summary["status"] == "incomplete"
+
+    def test_read_events_skips_blank_lines(self, tmp_path: Path) -> None:
+        """Blank lines in .jsonl files are silently skipped."""
+        import json
+
+        from kairos.cli import _inspect_read_events  # type: ignore[import]
+
+        good = {
+            "timestamp": "2024-01-15T10:00:00+00:00",
+            "event_type": "workflow_start",
+            "step_id": None,
+            "data": {"workflow_name": "wf", "run_id": "aaa", "total_steps": 1},
+            "level": "LogLevel.info",
+        }
+        content = "\n\n" + json.dumps(good) + "\n\n"
+        p = tmp_path / "blanks.jsonl"
+        p.write_text(content, encoding="utf-8")
+
+        events = _inspect_read_events(p)
+        assert len(events) == 1
