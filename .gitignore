@@ -39,3 +39,7 @@ Thumbs.db
 # Environment variables
 .env
 .env.*
+
+# Log output (from kairos run --log-format jsonl --log-file)
+tmp_logs/
+logs/
