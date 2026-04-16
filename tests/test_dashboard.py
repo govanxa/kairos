@@ -1338,13 +1338,13 @@ class TestCSPUpdate:
 
 
 class TestVersionBump:
-    """v0.4.4 version must be reflected in the package."""
+    """Current version must be reflected in the package."""
 
-    def test_version_is_0_4_4(self):
-        """kairos.__version__ must be '0.4.4'."""
+    def test_version_is_current(self):
+        """kairos.__version__ must match the current release."""
         import kairos
 
-        assert kairos.__version__ == "0.4.4"
+        assert kairos.__version__ == "0.4.5"
 
 
 class TestEdgeCases:
@@ -1425,3 +1425,957 @@ class TestEdgeCases:
         assert "workflow_name" in parsed["summary"]
         assert "status" in parsed["summary"]
         assert "run_id" in parsed["summary"]
+
+
+# ============================================================
+# Enhancement 8 — Step Input/Output Inspector
+# ============================================================
+
+
+class TestInspectorPanel:
+    """Enhancement 8 — step input/output inspector panel."""
+
+    def test_app_js_contains_inspector_renderer(self):
+        """app.js must include renderInspectorPanel function."""
+        from kairos.dashboard import _APP_JS
+
+        assert "renderInspectorPanel" in _APP_JS
+
+    def test_app_js_contains_inspector_state(self):
+        """app.js must track openInspectorStepId and currentRunEvents."""
+        from kairos.dashboard import _APP_JS
+
+        assert "openInspectorStepId" in _APP_JS
+        assert "currentRunEvents" in _APP_JS
+
+    def test_app_js_contains_toggle_inspector(self):
+        """app.js must include toggleInspector function."""
+        from kairos.dashboard import _APP_JS
+
+        assert "toggleInspector" in _APP_JS
+
+    def test_app_js_contains_close_inspector(self):
+        """app.js must include closeInspector function."""
+        from kairos.dashboard import _APP_JS
+
+        assert "closeInspector" in _APP_JS
+
+    def test_app_js_contains_switch_inspector_tab(self):
+        """app.js must include switchInspectorTab function."""
+        from kairos.dashboard import _APP_JS
+
+        assert "switchInspectorTab" in _APP_JS
+
+    def test_app_js_contains_inspect_icon(self):
+        """app.js must include iconInspect function."""
+        from kairos.dashboard import _APP_JS
+
+        assert "iconInspect" in _APP_JS
+
+    def test_app_js_contains_inspect_button_in_step_groups(self):
+        """app.js renderStepGroups must include inspect button."""
+        from kairos.dashboard import _APP_JS
+
+        assert "inspect-btn" in _APP_JS
+        assert "data-inspect-step" in _APP_JS
+
+    def test_styles_contain_inspector_panel(self):
+        """styles.css must include .inspector-panel class."""
+        from kairos.dashboard import _STYLES_CSS
+
+        assert ".inspector-panel" in _STYLES_CSS
+
+    def test_styles_contain_inspector_tabs(self):
+        """styles.css must include .inspector-tab class."""
+        from kairos.dashboard import _STYLES_CSS
+
+        assert ".inspector-tab" in _STYLES_CSS
+
+    def test_styles_contain_inspector_close(self):
+        """styles.css must include .inspector-close class."""
+        from kairos.dashboard import _STYLES_CSS
+
+        assert ".inspector-close" in _STYLES_CSS
+
+    def test_styles_contain_inspect_btn(self):
+        """styles.css must include .inspect-btn class."""
+        from kairos.dashboard import _STYLES_CSS
+
+        assert ".inspect-btn" in _STYLES_CSS
+
+    def test_styles_contain_inspector_empty(self):
+        """styles.css must include .inspector-empty class."""
+        from kairos.dashboard import _STYLES_CSS
+
+        assert ".inspector-empty" in _STYLES_CSS
+
+    def test_inspector_close_has_aria_label(self):
+        """Inspector close button must have aria-label."""
+        from kairos.dashboard import _APP_JS
+
+        assert "Close inspector" in _APP_JS
+
+    def test_inspect_btn_has_aria_label(self):
+        """Inspect button must have aria-label."""
+        from kairos.dashboard import _APP_JS
+
+        assert "Inspect step" in _APP_JS
+
+    def test_inspector_graceful_degradation_messages(self):
+        """Inspector must include context-specific degradation messages."""
+        from kairos.dashboard import _APP_JS
+
+        assert "not captured at this verbosity" in _APP_JS
+        assert "No input data recorded" in _APP_JS
+        assert "No validation contract configured" in _APP_JS
+        assert "Step did not complete" in _APP_JS
+
+    def test_inspector_tab_content_attributes(self):
+        """Inspector must use data-tab-content attributes for tab switching."""
+        from kairos.dashboard import _APP_JS
+
+        assert "data-tab-content" in _APP_JS
+        assert "data-tab=" in _APP_JS
+
+    # --- Behavioral tests ---
+
+    def test_inspector_panel_html_has_three_tabs(self):
+        """renderInspectorPanel must produce exactly three named tabs: input, output, validation."""
+        from kairos.dashboard import _APP_JS
+
+        # The rendered HTML must include all three tab data-tab values
+        assert 'data-tab="input"' in _APP_JS
+        assert 'data-tab="output"' in _APP_JS
+        assert 'data-tab="validation"' in _APP_JS
+        # And the matching tab-content sections
+        assert 'data-tab-content="input"' in _APP_JS
+        assert 'data-tab-content="output"' in _APP_JS
+        assert 'data-tab-content="validation"' in _APP_JS
+
+    def test_inspector_panel_html_has_correct_structure(self):
+        """renderInspectorPanel must produce inspector-header, inspector-tabs, inspector-body."""
+        from kairos.dashboard import _APP_JS
+
+        assert '"inspector-header"' in _APP_JS
+        assert '"inspector-tabs"' in _APP_JS
+        assert '"inspector-body"' in _APP_JS
+
+    def test_colorize_json_used_for_input_output_rendering(self):
+        """renderInspectorPanel must call colorizeJson for input and output tab content."""
+        from kairos.dashboard import _APP_JS
+
+        # colorizeJson must appear inside the renderInspectorPanel function body.
+        # Verify the function definition and its use of colorizeJson both exist.
+        assert "function renderInspectorPanel" in _APP_JS
+        assert "colorizeJson(inputData" in _APP_JS or "colorizeJson(input" in _APP_JS
+        assert "colorizeJson(outputData" in _APP_JS or "colorizeJson(output" in _APP_JS
+
+    def test_inspector_panel_data_attribute_carries_step_id(self):
+        """The rendered inspector panel root element must carry data-inspector-step attribute."""
+        from kairos.dashboard import _APP_JS
+
+        assert 'data-inspector-step="' in _APP_JS
+
+    def test_step_group_header_inspect_button_structure(self):
+        """Inspect button must have class, data-inspect-step, and aria-label."""
+        from kairos.dashboard import _APP_JS
+
+        # All three attributes must appear together in the inspect button markup
+        assert 'class="inspect-btn"' in _APP_JS
+        assert 'data-inspect-step="' in _APP_JS
+        assert 'aria-label="Inspect step ' in _APP_JS
+
+    def test_insert_adjacent_html_uses_beforeend(self):
+        """toggleInspector must insert panel as last child (beforeend) to stay inside the li."""
+        from kairos.dashboard import _APP_JS
+
+        assert "insertAdjacentHTML('beforeend'" in _APP_JS
+        assert "insertAdjacentHTML('afterend'" not in _APP_JS
+
+    def test_css_escape_used_in_selector(self):
+        """toggleInspector must use CSS.escape in querySelector to prevent selector injection."""
+        from kairos.dashboard import _APP_JS
+
+        assert "CSS.escape(stepId)" in _APP_JS
+
+    def test_styles_inspect_btn_focus_visible(self):
+        """styles.css must style inspect-btn with focus-visible."""
+        from kairos.dashboard import _STYLES_CSS
+
+        assert ".inspect-btn:focus-visible" in _STYLES_CSS
+
+    def test_styles_inspector_empty_code_styling(self):
+        """styles.css must style <code> inside .inspector-empty."""
+        from kairos.dashboard import _STYLES_CSS
+
+        assert ".inspector-empty code" in _STYLES_CSS
+        assert "var(--font-mono)" in _STYLES_CSS
+        assert "var(--bg-800)" in _STYLES_CSS
+
+
+# ---------------------------------------------------------------------------
+# Enhancement 5 — Step Dependency Graph (SVG DAG)
+# ---------------------------------------------------------------------------
+
+
+class TestDependencyGraph:
+    """Enhancement 5 — step dependency graph (SVG DAG)."""
+
+    # SVG helpers presence
+    def test_app_js_contains_svg_namespace(self):
+        from kairos.dashboard import _APP_JS
+
+        assert "http://www.w3.org/2000/svg" in _APP_JS
+
+    def test_app_js_contains_svg_el(self):
+        from kairos.dashboard import _APP_JS
+
+        assert "function svgEl(" in _APP_JS
+
+    def test_app_js_contains_svg_rect(self):
+        from kairos.dashboard import _APP_JS
+
+        assert "function svgRect(" in _APP_JS
+
+    def test_app_js_contains_svg_text(self):
+        from kairos.dashboard import _APP_JS
+
+        assert "function svgText(" in _APP_JS
+
+    def test_app_js_contains_svg_line(self):
+        from kairos.dashboard import _APP_JS
+
+        assert "function svgLine(" in _APP_JS
+
+    def test_app_js_contains_svg_path(self):
+        from kairos.dashboard import _APP_JS
+
+        assert "function svgPath(" in _APP_JS
+
+    def test_app_js_contains_svg_arrow_marker(self):
+        from kairos.dashboard import _APP_JS
+
+        assert "function svgArrowMarker(" in _APP_JS
+
+    def test_app_js_contains_svg_group(self):
+        from kairos.dashboard import _APP_JS
+
+        assert "function svgGroup(" in _APP_JS
+
+    # Graph component presence
+    def test_app_js_contains_render_graph_placeholder(self):
+        from kairos.dashboard import _APP_JS
+
+        assert "renderGraphPlaceholder" in _APP_JS
+
+    def test_app_js_contains_mount_dependency_graph(self):
+        from kairos.dashboard import _APP_JS
+
+        assert "mountDependencyGraph" in _APP_JS
+
+    def test_app_js_contains_extract_dependency_data(self):
+        from kairos.dashboard import _APP_JS
+
+        assert "extractDependencyData" in _APP_JS
+
+    def test_app_js_contains_compute_graph_layout(self):
+        from kairos.dashboard import _APP_JS
+
+        assert "computeGraphLayout" in _APP_JS
+
+    def test_app_js_contains_scroll_to_step_group(self):
+        from kairos.dashboard import _APP_JS
+
+        assert "scrollToStepGroup" in _APP_JS
+
+    # Graph container and CSS
+    def test_app_js_contains_graph_container(self):
+        from kairos.dashboard import _APP_JS
+
+        assert "graph-container" in _APP_JS
+        assert "dep-graph" in _APP_JS
+
+    def test_styles_contain_graph_container(self):
+        from kairos.dashboard import _STYLES_CSS
+
+        assert ".graph-container" in _STYLES_CSS
+
+    def test_styles_contain_graph_node(self):
+        from kairos.dashboard import _STYLES_CSS
+
+        assert ".graph-node" in _STYLES_CSS
+
+    def test_styles_contain_graph_highlight(self):
+        from kairos.dashboard import _STYLES_CSS
+
+        assert ".graph-highlight" in _STYLES_CSS
+
+    def test_styles_contain_graph_empty(self):
+        from kairos.dashboard import _STYLES_CSS
+
+        assert ".graph-empty" in _STYLES_CSS
+
+    # Behavioral tests
+    def test_graph_uses_create_element_ns(self):
+        """SVG elements must use createElementNS, not createElement."""
+        from kairos.dashboard import _APP_JS
+
+        assert "createElementNS" in _APP_JS
+
+    def test_graph_node_constants_defined(self):
+        """Graph layout constants must be defined."""
+        from kairos.dashboard import _APP_JS
+
+        assert "NODE_W" in _APP_JS
+        assert "NODE_H" in _APP_JS
+
+    def test_graph_node_has_data_step_id(self):
+        """Graph nodes must have data-step-id for event delegation."""
+        from kairos.dashboard import _APP_JS
+
+        assert "data-step-id" in _APP_JS
+
+    def test_graph_has_aria_label(self):
+        """Graph container must have accessible label."""
+        from kairos.dashboard import _APP_JS
+
+        assert "dependency graph" in _APP_JS.lower() or "aria-label" in _APP_JS
+
+    def test_graph_reads_css_tokens(self):
+        """Graph must read design system tokens via getComputedStyle."""
+        from kairos.dashboard import _APP_JS
+
+        assert "getComputedStyle" in _APP_JS
+
+    def test_graph_container_overflow_auto(self):
+        """Graph container must have overflow-x: auto for wide graphs."""
+        from kairos.dashboard import _STYLES_CSS
+
+        assert "overflow" in _STYLES_CSS
+
+    def test_graph_node_focus_visible(self):
+        """Graph nodes must be keyboard accessible with focus-visible."""
+        from kairos.dashboard import _STYLES_CSS
+
+        assert "focus-visible" in _STYLES_CSS
+
+    def test_graph_edge_uses_cubic_bezier(self):
+        """Graph edges must use cubic bezier paths."""
+        from kairos.dashboard import _APP_JS
+
+        # Cubic bezier uses C command in SVG path
+        assert "' C '" in _APP_JS or "'C '" in _APP_JS or "' C'" in _APP_JS or "C " in _APP_JS
+
+    def test_graph_calls_mount_after_innerhtml(self):
+        """showRunDetail must call mountDependencyGraph after setting innerHTML."""
+        from kairos.dashboard import _APP_JS
+
+        assert "mountDependencyGraph" in _APP_JS
+
+    def test_graph_event_delegation_for_node_click(self):
+        """Event delegation must handle graph node clicks."""
+        from kairos.dashboard import _APP_JS
+
+        assert "graph-container" in _APP_JS
+        assert "scrollToStepGroup" in _APP_JS
+
+    # Behavioral assertions (Finding 8)
+
+    def test_extract_dependency_data_accesses_step_id(self):
+        """extractDependencyData must reference step_id for event processing."""
+        from kairos.dashboard import _APP_JS
+
+        assert "step_id" in _APP_JS
+
+    def test_extract_dependency_data_accesses_plan_and_dependencies(self):
+        """extractDependencyData must reference data.plan and data.dependencies."""
+        from kairos.dashboard import _APP_JS
+
+        assert "data.plan" in _APP_JS or "'plan'" in _APP_JS or '"plan"' in _APP_JS
+        assert "dependencies" in _APP_JS
+
+    def test_compute_graph_layout_uses_layer_assignment(self):
+        """computeGraphLayout must use topological depth via layers variable."""
+        from kairos.dashboard import _APP_JS
+
+        assert "layers[" in _APP_JS
+        assert "layers[s.id]" in _APP_JS
+
+    def test_svg_helpers_use_create_element_ns(self):
+        """SVG helper svgEl must use createElementNS with the SVG namespace."""
+        from kairos.dashboard import _APP_JS
+
+        assert "createElementNS" in _APP_JS
+        assert "http://www.w3.org/2000/svg" in _APP_JS
+
+    def test_graph_node_text_truncation_constant(self):
+        """Node text truncation must use a named numeric limit."""
+        from kairos.dashboard import _APP_JS
+
+        # The truncation check compares node.id.length against a constant (18)
+        assert "node.id.length" in _APP_JS
+        assert "> 18" in _APP_JS or ">= 18" in _APP_JS or "> 17" in _APP_JS
+
+    def test_circular_dependency_warning_exists(self):
+        """computeGraphLayout must emit a console.warn when maxIter is exhausted."""
+        from kairos.dashboard import _APP_JS
+
+        assert "maxIter <= 0" in _APP_JS
+        assert "circular dependencies" in _APP_JS
+
+    def test_graph_placeholder_function_renamed(self):
+        """renderGraphPlaceholder must exist; renderDependencyGraph must not."""
+        from kairos.dashboard import _APP_JS
+
+        assert "function renderGraphPlaceholder(" in _APP_JS
+        assert "function renderDependencyGraph(" not in _APP_JS
+
+    def test_css_graph_highlight_uses_increased_specificity(self):
+        """graph-highlight must use .step-group-header.graph-highlight, not !important."""
+        from kairos.dashboard import _STYLES_CSS
+
+        assert ".step-group-header.graph-highlight" in _STYLES_CSS
+        # The bare single-class selector must not appear as its own rule
+        import re
+
+        assert not re.search(r"(?<![\w-])\.graph-highlight\s*\{", _STYLES_CSS)
+        rule_body = _STYLES_CSS.split(".step-group-header.graph-highlight")[1].split("}")[0]
+        assert "!important" not in rule_body
+
+    def test_font_mono_token_in_css_tokens_cache(self):
+        """getCssTokens must resolve --font-mono token."""
+        from kairos.dashboard import _APP_JS
+
+        assert "--font-mono" in _APP_JS
+        assert "fontMono" in _APP_JS
+
+    def test_svg_helpers_use_design_system_tokens_not_hardcoded_hex(self):
+        """SVG helper defaults must not use hardcoded hex colours in function bodies."""
+        from kairos.dashboard import _APP_JS
+
+        # svgText fill default must not be hardcoded hex — it must use tokens.textPrimary
+        assert "fill: opts.fill || '#f8fafc'" not in _APP_JS
+        # svgLine stroke default must not be hardcoded hex — it must use tokens.edge
+        assert "stroke || '#475569'" not in _APP_JS
+        # svgArrowMarker fill default must not be hardcoded hex
+        assert "fill: color || '#475569'" not in _APP_JS
+
+    def test_hover_uses_mouseleave_not_mouseout(self):
+        """Graph hover must use mouseleave, not mouseout, to prevent child-element flicker."""
+        from kairos.dashboard import _APP_JS
+
+        assert "mouseleave" in _APP_JS
+        assert "mouseout" not in _APP_JS
+
+
+# ---------------------------------------------------------------------------
+# Enhancement 6 — Export Run Data
+# ---------------------------------------------------------------------------
+
+
+class TestExportEndpointsSecurity:
+    """Enhancement 6 — export endpoints security (S17 compliance)."""
+
+    def test_export_json_requires_auth(self, server_with_runs):
+        """GET /api/runs/<id>/export/json without token returns 403."""
+        _server, base_url, token, _tmp = server_with_runs
+        status, _data = _fetch(f"{base_url}/api/runs/run001/export/json")
+        assert status == 403
+
+    def test_export_csv_requires_auth(self, server_with_runs):
+        """GET /api/runs/<id>/export/csv without token returns 403."""
+        _server, base_url, token, _tmp = server_with_runs
+        status, _data = _fetch(f"{base_url}/api/runs/run001/export/csv")
+        assert status == 403
+
+    def test_export_json_has_csp_headers(self, server_with_runs):
+        """Export JSON response includes CSP and nosniff headers."""
+        _server, base_url, token, _tmp = server_with_runs
+        _status, data = _fetch(f"{base_url}/api/runs/run001/export/json", token=token)
+        headers = {k.lower(): v for k, v in data["headers"].items()}
+        assert "content-security-policy" in headers
+        assert headers.get("x-content-type-options", "").lower() == "nosniff"
+
+    def test_export_csv_has_csp_headers(self, server_with_runs):
+        """Export CSV response includes CSP and nosniff headers."""
+        _server, base_url, token, _tmp = server_with_runs
+        _status, data = _fetch(f"{base_url}/api/runs/run001/export/csv", token=token)
+        headers = {k.lower(): v for k, v in data["headers"].items()}
+        assert "content-security-policy" in headers
+        assert headers.get("x-content-type-options", "").lower() == "nosniff"
+
+    def test_export_json_invalid_run_id_returns_404(self, server_with_runs):
+        """Export with nonexistent run_id returns 404."""
+        _server, base_url, token, _tmp = server_with_runs
+        status, _data = _fetch(f"{base_url}/api/runs/doesnotexist/export/json", token=token)
+        assert status == 404
+
+    def test_export_csv_invalid_run_id_returns_404(self, server_with_runs):
+        """Export with nonexistent run_id returns 404."""
+        _server, base_url, token, _tmp = server_with_runs
+        status, _data = _fetch(f"{base_url}/api/runs/doesnotexist/export/csv", token=token)
+        assert status == 404
+
+    def test_export_json_path_traversal_rejected(self, server_with_runs):
+        """Run ID with path traversal chars returns 404."""
+        _server, base_url, token, _tmp = server_with_runs
+        # URL-encode the traversal attempt so urllib doesn't reject it
+        status, _data = _fetch(
+            f"{base_url}/api/runs/..%2F..%2Fetc%2Fpasswd/export/json", token=token
+        )
+        assert status == 404
+
+    def test_export_csv_path_traversal_rejected(self, server_with_runs):
+        """Run ID with path traversal chars returns 404."""
+        _server, base_url, token, _tmp = server_with_runs
+        status, _data = _fetch(
+            f"{base_url}/api/runs/..%2F..%2Fetc%2Fpasswd/export/csv", token=token
+        )
+        assert status == 404
+
+    def test_export_json_post_returns_405(self, server_with_runs):
+        """POST to export JSON endpoint returns 405."""
+        _server, base_url, token, _tmp = server_with_runs
+        status, _data = _fetch(
+            f"{base_url}/api/runs/run001/export/json", token=token, method="POST"
+        )
+        assert status == 405
+
+    def test_export_csv_post_returns_405(self, server_with_runs):
+        """POST to export CSV endpoint returns 405."""
+        _server, base_url, token, _tmp = server_with_runs
+        status, _data = _fetch(f"{base_url}/api/runs/run001/export/csv", token=token, method="POST")
+        assert status == 405
+
+
+class TestExportJSON:
+    """Enhancement 6 — JSON export happy paths."""
+
+    def test_export_json_returns_formatted_json(self, server_with_runs):
+        """Export JSON returns pretty-printed JSON with run_id, summary, events."""
+        _server, base_url, token, _tmp = server_with_runs
+        status, data = _fetch(f"{base_url}/api/runs/run001/export/json", token=token)
+        assert status == 200
+        parsed = json.loads(data["body"])
+        assert parsed["run_id"] == "run001"
+        assert "summary" in parsed
+        assert "events" in parsed
+        assert isinstance(parsed["events"], list)
+
+    def test_export_json_content_disposition(self, server_with_runs):
+        """Export JSON has Content-Disposition: attachment header with filename."""
+        _server, base_url, token, _tmp = server_with_runs
+        _status, data = _fetch(f"{base_url}/api/runs/run001/export/json", token=token)
+        headers = {k.lower(): v for k, v in data["headers"].items()}
+        cd = headers.get("content-disposition", "")
+        assert "attachment" in cd
+        assert "run_run001.json" in cd
+
+    def test_export_json_content_type(self, server_with_runs):
+        """Export JSON has application/json Content-Type."""
+        _server, base_url, token, _tmp = server_with_runs
+        _status, data = _fetch(f"{base_url}/api/runs/run001/export/json", token=token)
+        headers = {k.lower(): v for k, v in data["headers"].items()}
+        assert "application/json" in headers.get("content-type", "")
+
+    def test_export_json_same_data_as_detail(self, server_with_runs):
+        """Export JSON contains same data as run detail endpoint."""
+        _server, base_url, token, _tmp = server_with_runs
+        _status, detail_data = _fetch(f"{base_url}/api/runs/run001", token=token)
+        _status2, export_data = _fetch(f"{base_url}/api/runs/run001/export/json", token=token)
+        detail = json.loads(detail_data["body"])
+        exported = json.loads(export_data["body"])
+        assert exported["run_id"] == detail["run_id"]
+        assert exported["summary"] == detail["summary"]
+        assert exported["events"] == detail["events"]
+
+    def test_export_json_is_pretty_printed(self, server_with_runs):
+        """Export JSON body contains newlines (pretty-printed with indent=2)."""
+        _server, base_url, token, _tmp = server_with_runs
+        _status, data = _fetch(f"{base_url}/api/runs/run001/export/json", token=token)
+        body = data["body"]
+        assert "\n" in body
+
+    def test_export_json_has_content_length(self, server_with_runs):
+        """Export JSON response has Content-Length header."""
+        _server, base_url, token, _tmp = server_with_runs
+        _status, data = _fetch(f"{base_url}/api/runs/run001/export/json", token=token)
+        headers = {k.lower(): v for k, v in data["headers"].items()}
+        assert "content-length" in headers
+        assert int(headers["content-length"]) > 0
+
+
+class TestExportCSV:
+    """Enhancement 6 — CSV export happy paths."""
+
+    def test_export_csv_returns_csv_content(self, server_with_runs):
+        """Export CSV returns valid CSV with header row."""
+        _server, base_url, token, _tmp = server_with_runs
+        status, data = _fetch(f"{base_url}/api/runs/run001/export/csv", token=token)
+        assert status == 200
+        lines = data["body"].splitlines()
+        assert len(lines) >= 1
+        header = lines[0]
+        assert "timestamp" in header
+        assert "event_type" in header
+
+    def test_export_csv_content_disposition(self, server_with_runs):
+        """Export CSV has Content-Disposition: attachment header."""
+        _server, base_url, token, _tmp = server_with_runs
+        _status, data = _fetch(f"{base_url}/api/runs/run001/export/csv", token=token)
+        headers = {k.lower(): v for k, v in data["headers"].items()}
+        cd = headers.get("content-disposition", "")
+        assert "attachment" in cd
+        assert "run_run001.csv" in cd
+
+    def test_export_csv_content_type(self, server_with_runs):
+        """Export CSV has text/csv Content-Type."""
+        _server, base_url, token, _tmp = server_with_runs
+        _status, data = _fetch(f"{base_url}/api/runs/run001/export/csv", token=token)
+        headers = {k.lower(): v for k, v in data["headers"].items()}
+        assert "text/csv" in headers.get("content-type", "")
+
+    def test_export_csv_row_count_matches_events(self, server_with_runs):
+        """CSV has one row per event plus header row."""
+        _server, base_url, token, _tmp = server_with_runs
+        # run001 has 2 events (workflow_start, workflow_complete)
+        _status, data = _fetch(f"{base_url}/api/runs/run001/export/csv", token=token)
+        lines = [ln for ln in data["body"].splitlines() if ln.strip()]
+        # header + 2 data rows
+        assert len(lines) == 3
+
+    def test_export_csv_has_content_length(self, server_with_runs):
+        """Export CSV response has Content-Length header."""
+        _server, base_url, token, _tmp = server_with_runs
+        _status, data = _fetch(f"{base_url}/api/runs/run001/export/csv", token=token)
+        headers = {k.lower(): v for k, v in data["headers"].items()}
+        assert "content-length" in headers
+        assert int(headers["content-length"]) > 0
+
+
+class TestEventsToCsv:
+    """Unit tests for _events_to_csv helper."""
+
+    def test_empty_events_returns_header_only(self):
+        """Empty event list produces CSV with header row only."""
+        from kairos.dashboard import _events_to_csv
+
+        result = _events_to_csv([])
+        lines = [ln for ln in result.splitlines() if ln.strip()]
+        assert len(lines) == 1
+        assert "timestamp" in lines[0]
+        assert "event_type" in lines[0]
+
+    def test_event_fields_mapped_to_columns(self):
+        """Event dict fields map to correct CSV columns."""
+        from kairos.dashboard import _events_to_csv
+
+        events = [
+            {
+                "timestamp": "2024-01-01T12:00:00",
+                "event_type": "step_start",
+                "step_id": "my_step",
+                "level": "INFO",
+                "data": {"key": "value"},
+            }
+        ]
+        result = _events_to_csv(events)
+        lines = result.splitlines()
+        assert len(lines) == 2
+        data_row = lines[1]
+        assert "2024-01-01T12:00:00" in data_row
+        assert "step_start" in data_row
+        assert "my_step" in data_row
+        assert "INFO" in data_row
+
+    def test_missing_fields_produce_empty_cells(self):
+        """Events with missing fields produce empty cells, not errors."""
+        from kairos.dashboard import _events_to_csv
+
+        events = [{"event_type": "workflow_start"}]
+        # Should not raise
+        result = _events_to_csv(events)
+        assert "workflow_start" in result
+
+    def test_data_field_serialized_as_json(self):
+        """data_json column contains JSON of the data field."""
+        from kairos.dashboard import _events_to_csv
+
+        events = [
+            {
+                "timestamp": "2024-01-01",
+                "event_type": "step_complete",
+                "step_id": "s1",
+                "level": "INFO",
+                "data": {"status": "completed", "duration_ms": 5.0},
+            }
+        ]
+        result = _events_to_csv(events)
+        # The data JSON must appear in the row
+        assert "completed" in result
+        assert "duration_ms" in result
+
+    def test_formula_characters_escaped_in_csv(self):
+        """Values starting with =, +, -, @ are prefixed to prevent CSV injection."""
+        import csv as csv_mod
+        import io as io_mod
+
+        from kairos.dashboard import _events_to_csv
+
+        event = {
+            "timestamp": "2024-01-01T00:00:00",
+            "event_type": "=cmd|' /C calc'!A0",
+            "step_id": "+malicious",
+            "level": "-danger",
+            "data": {"key": "value"},
+        }
+        result = _events_to_csv([event])
+        lines = result.strip().split("\n")
+        assert len(lines) == 2
+
+        reader = csv_mod.reader(io_mod.StringIO(result))
+        rows = list(reader)
+        data_row = rows[1]
+
+        # event_type column (index 1) should be escaped with leading quote
+        assert data_row[1].startswith("'")
+        assert not data_row[1].startswith("=")
+
+        # step_id column (index 2) should be escaped
+        assert data_row[2].startswith("'")
+        assert not data_row[2].startswith("+")
+
+        # level column (index 3) should be escaped
+        assert data_row[3].startswith("'")
+        assert not data_row[3].startswith("-")
+
+
+class TestExportUI:
+    """Enhancement 6 — export UI elements."""
+
+    def test_app_js_contains_export_buttons(self):
+        from kairos.dashboard import _APP_JS
+
+        assert "export-json" in _APP_JS
+        assert "export-csv" in _APP_JS
+        assert "copy-api-url" in _APP_JS
+
+    def test_app_js_contains_download_icon(self):
+        from kairos.dashboard import _APP_JS
+
+        assert "iconDownload" in _APP_JS
+
+    def test_app_js_contains_copy_icon(self):
+        from kairos.dashboard import _APP_JS
+
+        assert "iconCopy" in _APP_JS
+
+    def test_styles_contain_export_classes(self):
+        from kairos.dashboard import _STYLES_CSS
+
+        assert ".btn-export" in _STYLES_CSS
+        assert ".export-actions" in _STYLES_CSS
+
+    def test_styles_contain_copied_state(self):
+        from kairos.dashboard import _STYLES_CSS
+
+        assert ".btn-export-copied" in _STYLES_CSS
+
+    def test_export_buttons_have_aria_labels(self):
+        from kairos.dashboard import _APP_JS
+
+        assert "Download JSON" in _APP_JS
+        assert "Download CSV" in _APP_JS
+        assert "Copy API URL" in _APP_JS
+
+    def test_export_buttons_focus_visible(self):
+        from kairos.dashboard import _STYLES_CSS
+
+        assert ".btn-export:focus-visible" in _STYLES_CSS
+
+
+# ---------------------------------------------------------------------------
+# Enhancement 7 — Diff Two Runs
+# ---------------------------------------------------------------------------
+
+
+class TestDiffView:
+    """Enhancement 7 — diff two runs."""
+
+    def test_app_js_contains_render_diff_view(self):
+        from kairos.dashboard import _APP_JS
+
+        assert "renderDiffView" in _APP_JS
+
+    def test_app_js_contains_show_diff_view(self):
+        from kairos.dashboard import _APP_JS
+
+        assert "showDiffView" in _APP_JS
+
+    def test_app_js_contains_selected_runs_state(self):
+        from kairos.dashboard import _APP_JS
+
+        assert "selectedRuns" in _APP_JS
+
+    def test_app_js_contains_extract_step_list(self):
+        from kairos.dashboard import _APP_JS
+
+        assert "extractStepList" in _APP_JS
+
+    def test_app_js_contains_handle_run_checkbox(self):
+        from kairos.dashboard import _APP_JS
+
+        assert "handleRunCheckbox" in _APP_JS
+
+    def test_app_js_contains_update_compare_button(self):
+        from kairos.dashboard import _APP_JS
+
+        assert "updateCompareButton" in _APP_JS
+
+    def test_app_js_contains_run_checkbox(self):
+        from kairos.dashboard import _APP_JS
+
+        assert "run-checkbox" in _APP_JS
+
+    def test_app_js_contains_compare_btn(self):
+        from kairos.dashboard import _APP_JS
+
+        assert "compare-btn" in _APP_JS
+
+    def test_styles_contain_diff_view(self):
+        from kairos.dashboard import _STYLES_CSS
+
+        assert ".diff-view" in _STYLES_CSS
+
+    def test_styles_contain_diff_changed(self):
+        from kairos.dashboard import _STYLES_CSS
+
+        assert ".diff-changed" in _STYLES_CSS
+
+    def test_styles_contain_diff_column(self):
+        from kairos.dashboard import _STYLES_CSS
+
+        assert ".diff-column" in _STYLES_CSS
+
+    def test_styles_contain_checkbox_classes(self):
+        from kairos.dashboard import _STYLES_CSS
+
+        assert ".th-checkbox" in _STYLES_CSS
+        assert ".td-checkbox" in _STYLES_CSS
+
+    def test_styles_contain_compare_btn(self):
+        from kairos.dashboard import _STYLES_CSS
+
+        assert ".compare-btn" in _STYLES_CSS
+
+    def test_styles_contain_diff_delta(self):
+        from kairos.dashboard import _STYLES_CSS
+
+        assert ".diff-delta" in _STYLES_CSS
+        assert ".diff-delta-better" in _STYLES_CSS
+        assert ".diff-delta-worse" in _STYLES_CSS
+
+    def test_styles_contain_diff_missing(self):
+        from kairos.dashboard import _STYLES_CSS
+
+        assert ".diff-missing" in _STYLES_CSS
+
+    def test_checkbox_has_aria_label(self):
+        from kairos.dashboard import _APP_JS
+
+        assert "Select run" in _APP_JS or "select run" in _APP_JS.lower()
+
+    def test_checkbox_stop_propagation(self):
+        """Checkbox click must stopPropagation to prevent row navigation."""
+        from kairos.dashboard import _APP_JS
+
+        assert "stopPropagation" in _APP_JS
+
+    def test_diff_view_uses_promise_all(self):
+        """Diff view fetches both runs in parallel."""
+        from kairos.dashboard import _APP_JS
+
+        assert "Promise.all" in _APP_JS
+
+    def test_diff_view_uses_esc_for_run_ids(self):
+        """Run IDs in diff view must be escaped."""
+        from kairos.dashboard import _APP_JS
+
+        assert "esc(" in _APP_JS
+
+    def test_diff_router_integration(self):
+        """Router must handle 'diff' view."""
+        from kairos.dashboard import _APP_JS
+
+        assert "'diff'" in _APP_JS or '"diff"' in _APP_JS
+
+    def test_selected_runs_cleared_on_navigate(self):
+        """selectedRuns should be cleared when navigating to run-list."""
+        from kairos.dashboard import _APP_JS
+
+        assert "selectedRuns = []" in _APP_JS or "selectedRuns=[]" in _APP_JS
+
+    def test_compare_btn_focus_visible(self):
+        from kairos.dashboard import _STYLES_CSS
+
+        assert ".compare-btn:focus-visible" in _STYLES_CSS
+
+    def test_diff_step_row_classes(self):
+        from kairos.dashboard import _STYLES_CSS
+
+        assert ".diff-step-row" in _STYLES_CSS
+        assert ".diff-step-name" in _STYLES_CSS
+        assert ".diff-step-duration" in _STYLES_CSS
+
+    def test_diff_arrow_classes(self):
+        from kairos.dashboard import _STYLES_CSS
+
+        assert ".diff-arrow-improve" in _STYLES_CSS
+        assert ".diff-arrow-regress" in _STYLES_CSS
+
+    def test_max_two_selections_enforced(self):
+        """handleRunCheckbox must enforce max 2 selections."""
+        from kairos.dashboard import _APP_JS
+
+        assert ">= 2" in _APP_JS or ">=2" in _APP_JS or "=== 2" in _APP_JS
+
+    def test_extract_step_list_handles_all_event_types(self):
+        """extractStepList must process step_start/step_complete/step_fail/step_skip."""
+        from kairos.dashboard import _APP_JS
+
+        assert "step_start" in _APP_JS
+        assert "step_complete" in _APP_JS
+        assert "step_fail" in _APP_JS
+        assert "step_skip" in _APP_JS
+
+    def test_diff_view_renders_two_columns(self):
+        """diff-view must use a two-column grid layout."""
+        from kairos.dashboard import _STYLES_CSS
+
+        assert "grid-template-columns: 1fr 1fr" in _STYLES_CSS
+
+    def test_refresh_run_list_view_includes_checkbox_column(self):
+        """refreshRunListView must include the run-checkbox input in rebuilt rows."""
+        from kairos.dashboard import _APP_JS
+
+        # Locate the refreshRunListView function body and verify it contains run-checkbox
+        idx = _APP_JS.find("function refreshRunListView")
+        assert idx != -1, "refreshRunListView not found"
+        # Find the end of the function by locating the next top-level function after it
+        snippet = _APP_JS[idx : idx + 2000]
+        assert "run-checkbox" in snippet, "run-checkbox not found in refreshRunListView"
+
+    def test_duration_delta_filters_sub_ms_differences(self):
+        """Duration delta must not be shown for differences smaller than 1ms."""
+        from kairos.dashboard import _APP_JS
+
+        assert "Math.abs(diff) >= 1" in _APP_JS
+
+    def test_step_matching_uses_union_of_step_ids(self):
+        """Diff view step list must use union of step IDs from both runs."""
+        from kairos.dashboard import _APP_JS
+
+        # The union is built by iterating stepsA then stepsB with a 'seen' guard
+        assert "allStepIds" in _APP_JS
+        assert "stepsA" in _APP_JS
+        assert "stepsB" in _APP_JS

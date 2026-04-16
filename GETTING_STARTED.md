@@ -1053,17 +1053,19 @@ workflow = Workflow(  # <-- the CLI finds this
 
 The dashboard is a localhost web UI for browsing workflow runs. It reads the same `.jsonl` files that `kairos inspect` reads, but serves them as a browsable web interface.
 
-> **Try it now:** Run `py examples/dashboard_demo.py` to generate sample run data, then `kairos dashboard --log-dir dashboard_logs --open` to view it in your browser. No API keys needed.
+> **Try it now:** Run `py examples/dashboard_demo.py --verbose` to generate sample run data with full step input/output, then `kairos dashboard --log-dir dashboard_logs --open` to view it in your browser. No API keys needed. You can also use `py -m kairos dashboard` instead of `kairos dashboard`.
 
 ### Start the dashboard
 
 ```bash
-# First, generate some log data by running a workflow with JSONL logging
-kairos run my_workflow.py --log-format jsonl --log-file ./logs
+# Generate run data with verbose logging (captures step input/output for the inspector):
+python examples/dashboard_demo.py --verbose
 
-# Launch the dashboard
-kairos dashboard --log-dir ./logs
+# Launch the dashboard:
+kairos dashboard --log-dir dashboard_logs --open
 ```
+
+The `--verbose` flag tells the logger to capture full step input and output data. Without it, the Step Inspector panel will show "No input data recorded" instead of actual data. Use `--verbose` during development; omit it in production for lower log volume.
 
 On startup, the dashboard prints a URL with an auth token:
 
@@ -1088,9 +1090,17 @@ kairos dashboard --log-dir ./logs --no-auth
 
 ### What you see
 
-**Run list** — A filterable table of all past runs with status badges (green/red/gray), step counts, duration, and timestamps. Filter by status (Complete/Failed/Incomplete), workflow name, or free-text search. A "Showing X of Y runs" counter updates as you filter. Click any row to drill into the detail view.
+**Run list** — A filterable table of all past runs with status badges (green/red/gray), step counts, duration, and timestamps. Filter by status (Complete/Failed/Incomplete), workflow name, or free-text search. A "Showing X of Y runs" counter updates as you filter. Select two runs via checkboxes and click "Compare" for a side-by-side diff. Click any row to drill into the detail view.
 
 **Run detail** — A summary grid (status, workflow name, duration, steps completed) plus a step-grouped timeline. Events are grouped by step into collapsible sections with status badges, durations, and event counts. Failed groups auto-expand so problems are visible immediately. Click any event row to expand and see the full JSON data with syntax coloring (cyan keys, green strings, amber numbers). Workflow-level events appear outside groups.
+
+**Step dependency graph** — An interactive SVG DAG at the top of the run detail view. Nodes are color-coded by step status (green/complete, red/failed, gray/skipped, blue/running). Hover a node to highlight connected edges. Click a node to scroll to that step's group in the timeline. Steps with foreach fan-out show a badge with the item count.
+
+**Step inspector** — Click the "Inspect" button on any step group header to open a tabbed panel showing Input, Output, and Validation data. Data is displayed as formatted JSON. If data was not captured (requires `--verbose` logging), the panel shows a context-specific message explaining what is missing and how to capture it.
+
+**Export** — Three export actions in the run detail header: "Download JSON" (full run data), "Download CSV" (event timeline as spreadsheet-ready CSV), and "Copy API URL" (authenticated API URL for scripting).
+
+**Run comparison** — Select exactly two runs in the run list via checkboxes, then click "Compare." A side-by-side view shows status changes (with arrows), duration deltas, and step presence/absence. Steps that exist in one run but not the other are highlighted.
 
 **Auto-refresh** — Toggle live mode via the header button (pulsing green dot when active). Choose an interval (2s/5s/10s/30s). New runs appear in the filtered table automatically. Auto-refresh pauses when viewing a run detail page.
 
@@ -1104,6 +1114,12 @@ curl "http://127.0.0.1:8420/api/runs?token=YOUR_TOKEN"
 
 # Get events for a specific run
 curl "http://127.0.0.1:8420/api/runs/RUN_ID?token=YOUR_TOKEN"
+
+# Export run as formatted JSON file
+curl -o run.json "http://127.0.0.1:8420/api/runs/RUN_ID/export/json?token=YOUR_TOKEN"
+
+# Export run events as CSV
+curl -o run.csv "http://127.0.0.1:8420/api/runs/RUN_ID/export/csv?token=YOUR_TOKEN"
 
 # Health check (no auth required)
 curl "http://127.0.0.1:8420/api/health"

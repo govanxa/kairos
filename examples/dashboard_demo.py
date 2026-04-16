@@ -12,6 +12,9 @@ Usage:
     # Step 1: Run this script to generate log data
     python examples/dashboard_demo.py
 
+    # With verbose logging (captures step input/output for the inspector):
+    python examples/dashboard_demo.py --verbose
+
     # Step 2: Launch the dashboard to view the runs
     kairos dashboard --log-dir ./dashboard_logs --open
 
@@ -106,7 +109,12 @@ report_schema = Schema(
 LOG_DIR = Path("dashboard_logs")
 
 
-def run_workflow(name: str, inputs: dict[str, object], fail_step: str | None = None) -> None:
+def run_workflow(
+    name: str,
+    inputs: dict[str, object],
+    fail_step: str | None = None,
+    verbose: bool = False,
+) -> None:
     """Run a workflow variant and log to the dashboard_logs directory."""
 
     def maybe_fail(ctx: StepContext) -> dict[str, object]:
@@ -137,10 +145,11 @@ def run_workflow(name: str, inputs: dict[str, object], fail_step: str | None = N
 
     # Set up logging — console + JSONL file
     LOG_DIR.mkdir(parents=True, exist_ok=True)
+    verbosity = LogVerbosity.VERBOSE if verbose else LogVerbosity.NORMAL
     logger = RunLogger(
-        verbosity=LogVerbosity.NORMAL,
+        verbosity=verbosity,
         sinks=[
-            ConsoleSink(stream=sys.stderr, verbosity=LogVerbosity.NORMAL),
+            ConsoleSink(stream=sys.stderr, verbosity=verbosity),
             JSONLinesSink(base_dir=str(LOG_DIR)),
         ],
         sensitive_patterns=["*api_key*", "*password*"],
@@ -167,8 +176,12 @@ def run_workflow(name: str, inputs: dict[str, object], fail_step: str | None = N
 
 def main() -> None:
     """Run several workflow variants to populate the dashboard."""
+    verbose = "--verbose" in sys.argv or "-v" in sys.argv
+
     print("=" * 60)  # noqa: T20
     print("  Kairos Dashboard Demo")  # noqa: T20
+    if verbose:
+        print("  Verbose mode — step input/output will be captured")  # noqa: T20
     print("  Generating run history for the dashboard...")  # noqa: T20
     print("=" * 60)  # noqa: T20
 
@@ -177,6 +190,7 @@ def main() -> None:
     run_workflow(
         name="competitive-analysis",
         inputs={"industry": "fintech", "companies": ["Acme", "Globex", "Initech"]},
+        verbose=verbose,
     )
 
     # Run 2: Different industry
@@ -184,6 +198,7 @@ def main() -> None:
     run_workflow(
         name="competitive-analysis",
         inputs={"industry": "healthcare", "companies": ["MedCorp", "HealthTech"]},
+        verbose=verbose,
     )
 
     # Run 3: Intentional failure (report step fails)
@@ -192,6 +207,7 @@ def main() -> None:
         name="competitive-analysis",
         inputs={"industry": "retail", "companies": ["ShopCo", "MartInc"]},
         fail_step="report",
+        verbose=verbose,
     )
 
     # Summary
