@@ -1013,10 +1013,15 @@ class TestDashboardCliCommand:
         runner = CliRunner()
         result = runner.invoke(app, ["dashboard", "--help"])
         assert result.exit_code == 0
-        # Help output should mention key options
-        assert "--port" in result.output or "port" in result.output.lower()
-        assert "--log-dir" in result.output or "log-dir" in result.output.lower()
-        assert "--no-auth" in result.output or "no-auth" in result.output.lower()
+        # Strip ANSI escape codes — typer on some Python versions injects
+        # ANSI color codes between hyphens (e.g., --log-dir becomes
+        # \x1b[36m-\x1b[0m\x1b[36m-log\x1b[0m\x1b[36m-dir\x1b[0m).
+        import re
+
+        plain = re.sub(r"\x1b\[[0-9;]*m", "", result.output).lower()
+        assert "port" in plain
+        assert "log-dir" in plain
+        assert "no-auth" in plain
 
     def test_dashboard_command_rejects_nonexistent_log_dir(self, tmp_path: Path):
         """kairos dashboard --log-dir /nonexistent must exit with error."""
