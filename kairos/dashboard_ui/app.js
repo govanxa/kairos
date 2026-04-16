@@ -114,6 +114,20 @@
     return '<svg viewBox="0 0 16 16" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M6 4l4 4-4 4"/></svg>';
   }
 
+  /** Workflow graph icon — used in empty states. */
+  function iconWorkflowGraph() {
+    return '<svg class="empty-icon" viewBox="0 0 64 64" width="48" height="48" fill="none" stroke="currentColor" stroke-width="1.5">' +
+      '<rect x="20" y="4" width="24" height="12" rx="3"/>' +
+      '<rect x="4" y="28" width="24" height="12" rx="3"/>' +
+      '<rect x="36" y="28" width="24" height="12" rx="3"/>' +
+      '<rect x="20" y="52" width="24" height="12" rx="3"/>' +
+      '<line x1="32" y1="16" x2="16" y2="28"/>' +
+      '<line x1="32" y1="16" x2="48" y2="28"/>' +
+      '<line x1="16" y1="40" x2="32" y2="52"/>' +
+      '<line x1="48" y1="40" x2="32" y2="52"/>' +
+      '</svg>';
+  }
+
   // ============================================================
   // === JSON Coloring (Enhancement 1) ===
   // ============================================================
@@ -139,54 +153,54 @@
     const padClose = indent > 0 ? '  '.repeat(indent - 1) : '';
 
     if (value === null) {
-      return '<span style="color:var(--syntax-null)">null</span>';
+      return '<span class="json-null">null</span>';
     }
 
     if (typeof value === 'boolean') {
-      return '<span style="color:var(--syntax-boolean)">' + esc(String(value)) + '</span>';
+      return '<span class="json-boolean">' + esc(String(value)) + '</span>';
     }
 
     if (typeof value === 'number') {
-      return '<span style="color:var(--syntax-number)">' + esc(String(value)) + '</span>';
+      return '<span class="json-number">' + esc(String(value)) + '</span>';
     }
 
     if (typeof value === 'string') {
       let display = value;
       if (display.length > 500) display = display.slice(0, 500) + '...';
-      return '<span style="color:var(--syntax-string)">"' + esc(display) + '"</span>';
+      return '<span class="json-string">"' + esc(display) + '"</span>';
     }
 
     if (Array.isArray(value)) {
       if (value.length === 0) {
-        return '<span style="color:var(--syntax-bracket)">[]</span>';
+        return '<span class="json-bracket">[]</span>';
       }
       const items = value.map(function (item) {
         return pad + '  ' + colorizeJson(item, indent + 1, depth + 1);
       });
       return (
-        '<span style="color:var(--syntax-bracket)">[</span>\n' +
-        items.join('<span style="color:var(--syntax-bracket)">,</span>\n') + '\n' +
-        pad + '<span style="color:var(--syntax-bracket)">]</span>'
+        '<span class="json-bracket">[</span>\n' +
+        items.join('<span class="json-bracket">,</span>\n') + '\n' +
+        pad + '<span class="json-bracket">]</span>'
       );
     }
 
     if (typeof value === 'object') {
       const keys = Object.keys(value);
       if (keys.length === 0) {
-        return '<span style="color:var(--syntax-bracket)">{}</span>';
+        return '<span class="json-bracket">{}</span>';
       }
       const pairs = keys.map(function (k) {
         return (
           pad + '  ' +
-          '<span style="color:var(--syntax-key)">"' + esc(k) + '"</span>' +
-          '<span style="color:var(--syntax-bracket)">: </span>' +
+          '<span class="json-key">"' + esc(k) + '"</span>' +
+          '<span class="json-bracket">: </span>' +
           colorizeJson(value[k], indent + 1, depth + 1)
         );
       });
       return (
-        '<span style="color:var(--syntax-bracket)">{</span>\n' +
-        pairs.join('<span style="color:var(--syntax-bracket)">,</span>\n') + '\n' +
-        pad + '<span style="color:var(--syntax-bracket)">}</span>'
+        '<span class="json-bracket">{</span>\n' +
+        pairs.join('<span class="json-bracket">,</span>\n') + '\n' +
+        pad + '<span class="json-bracket">}</span>'
       );
     }
 
@@ -215,15 +229,39 @@
       (s === 'all' ? 'All statuses' : s.charAt(0).toUpperCase() + s.slice(1)) + '</option>'
     ).join('');
 
+    const isFiltered = filtered.length < allRuns.length;
+    const barClass = 'filter-bar' + (isFiltered ? ' filters-active' : '');
+
+    // Build active filter badges
+    let badges = '';
+    if (f.status !== 'all') {
+      badges += '<span class="filter-badge">' +
+        'Status: ' + esc(f.status.charAt(0).toUpperCase() + f.status.slice(1)) +
+        ' <button class="filter-badge-remove" data-filter-clear="status" aria-label="Remove status filter">\u00d7</button>' +
+        '</span>';
+    }
+    if (f.workflow !== 'all') {
+      badges += '<span class="filter-badge">' +
+        esc(f.workflow) +
+        ' <button class="filter-badge-remove" data-filter-clear="workflow" aria-label="Remove workflow filter">\u00d7</button>' +
+        '</span>';
+    }
+    if (f.search) {
+      badges += '<span class="filter-badge">' +
+        '\u201c' + esc(f.search) + '\u201d' +
+        ' <button class="filter-badge-remove" data-filter-clear="search" aria-label="Remove search filter">\u00d7</button>' +
+        '</span>';
+    }
+    const badgesHtml = badges ? '<div class="filter-badges">' + badges + '</div>' : '';
+
     const filterBar =
-      '<div class="filter-bar">' +
-      '<select id="filter-status">' + statusOptions + '</select>' +
-      '<select id="filter-workflow">' + wfOptions + '</select>' +
-      '<input type="text" id="filter-search" placeholder="Search by name or run ID\u2026" value="' + esc(f.search) + '">' +
+      '<div class="' + barClass + '">' +
+      '<select id="filter-status" aria-label="Filter by status">' + statusOptions + '</select>' +
+      '<select id="filter-workflow" aria-label="Filter by workflow">' + wfOptions + '</select>' +
+      '<input type="text" id="filter-search" aria-label="Search runs" placeholder="Search by name or run ID\u2026" value="' + esc(f.search) + '">' +
+      badgesHtml +
       '<span class="filter-count">Showing ' + filtered.length + ' of ' + allRuns.length + ' runs</span>' +
-      '<button class="filter-clear" id="filter-clear"' +
-      (filtered.length >= allRuns.length ? ' style="display:none"' : '') +
-      '>Clear</button>' +
+      (isFiltered ? '<button class="filter-clear" id="filter-clear">Clear all</button>' : '') +
       '</div>';
 
     if (filtered.length === 0) {
@@ -231,7 +269,11 @@
         '<div class="panel">' +
         '<div class="panel-header">Run History</div>' +
         filterBar +
-        '<div class="empty">No runs match the current filters.</div>' +
+        '<div class="empty-structured">' +
+        '<div class="empty-heading">No matching runs</div>' +
+        '<div class="empty-text">No runs match the current filters. Try adjusting your search or status filter.</div>' +
+        '<div class="empty-action"><button id="filter-clear-empty">Clear all filters</button></div>' +
+        '</div>' +
         '</div>'
       );
     }
@@ -239,13 +281,13 @@
     let rows = '';
     for (const run of filtered) {
       rows +=
-        '<tr class="clickable" data-run-id="' + esc(run.run_id) + '">' +
+        '<tr class="clickable" data-run-id="' + esc(run.run_id) + '" tabindex="0" role="button">' +
         '<td><span class="mono">' + esc((run.run_id || '').slice(0, 8)) + '</span></td>' +
         '<td>' + esc(run.workflow_name || '\u2014') + '</td>' +
         '<td>' + statusBadge(run.status || 'unknown') + '</td>' +
-        '<td><span class="mono">' + esc((run.completed_steps || 0) + '/' + (run.total_steps || 0)) + '</span></td>' +
-        '<td><span class="mono">' + fmtDuration(run.duration_ms) + '</span></td>' +
-        '<td><span class="mono" style="color:var(--text-dim);font-size:var(--text-sm)">' + fmtTs(run.started_at) + '</span></td>' +
+        '<td><span class="mono data-metric">' + esc((run.completed_steps || 0) + '/' + (run.total_steps || 0)) + '</span></td>' +
+        '<td><span class="mono data-metric">' + fmtDuration(run.duration_ms) + '</span></td>' +
+        '<td><span class="mono ts-cell">' + fmtTs(run.started_at) + '</span></td>' +
         '</tr>';
     }
 
@@ -398,7 +440,7 @@
       '<span class="evt-data">' + esc(dataStr) + '</span>' +
       '</li>' +
       '<li class="event-expanded" id="' + expandId + '">' +
-      '<pre>' + (hasData ? colorizeJson(data, 0, 0) : '<span style="color:var(--text-faint)">no data</span>') + '</pre>' +
+      '<pre>' + (hasData ? colorizeJson(data, 0, 0) : '<span class="text-faint">no data</span>') + '</pre>' +
       '</li>'
     );
   }
@@ -411,6 +453,7 @@
     currentView = 'run-list';
     currentRunId = null;
     runs = runList;
+    document.title = 'Kairos Dashboard';
 
     const app = document.getElementById('app');
     document.getElementById('run-count').textContent =
@@ -418,8 +461,15 @@
 
     if (runList.length === 0) {
       app.innerHTML =
-        '<div class="panel"><div class="empty">' +
-        'No runs found. Run a workflow with <code>--log-format=jsonl</code> to populate the dashboard.' +
+        '<div class="panel"><div class="empty-structured">' +
+        iconWorkflowGraph() +
+        '<div class="empty-heading">No runs yet</div>' +
+        '<div class="empty-text">Run a workflow with logging enabled to see it here.</div>' +
+        '<div class="empty-code">' +
+        '<span class="cmd">kairos run</span> <span class="arg">my_workflow.py</span> ' +
+        '<span class="flag">--log-format</span> jsonl ' +
+        '<span class="flag">--log-file</span> ./logs' +
+        '</div>' +
         '</div></div>';
       return;
     }
@@ -445,11 +495,11 @@
         const events = data.events || [];
 
         const summaryHtml =
-          '<div class="panel" style="margin-bottom:var(--space-4)">' +
+          '<div class="panel panel-detail">' +
           '<div class="panel-header">Run Summary \u2014 ' + esc(runId.slice(0, 8)) + '</div>' +
           '<div class="summary-grid">' +
           '<div class="summary-cell"><div class="label">Status</div>' +
-          '<div class="value" style="font-size:var(--text-xl)">' + statusBadge(summary.status || 'unknown') + '</div></div>' +
+          '<div class="value value-md">' + statusBadge(summary.status || 'unknown') + '</div></div>' +
           '<div class="summary-cell"><div class="label">Workflow</div>' +
           '<div class="value value-md">' + esc(summary.workflow_name || '?') + '</div></div>' +
           '<div class="summary-cell"><div class="label">Duration</div>' +
@@ -458,10 +508,24 @@
           '<div class="value">' + esc((summary.completed_steps || 0) + '/' + (summary.total_steps || 0)) + '</div></div>' +
           '</div></div>';
 
+        const wfName = summary.workflow_name || 'unknown';
+        const shortId = runId.slice(0, 8);
+        document.title = esc(wfName) + ' (' + shortId + ') \u2014 Kairos Dashboard';
+
         const eventsHtml = renderStepGroups(events);
 
-        app.innerHTML =
+        const navBar =
+          '<div class="detail-nav">' +
           '<button class="back-btn" id="back-btn">\u2190 Back to runs</button>' +
+          '<span class="detail-breadcrumb">' +
+          '<span class="detail-wf-name">' + esc(wfName) + '</span>' +
+          '<span class="detail-sep">\u00b7</span>' +
+          '<span class="detail-run-id">' + esc(shortId) + '</span>' +
+          '</span>' +
+          '</div>';
+
+        app.innerHTML =
+          navBar +
           summaryHtml +
           '<div class="panel">' +
           '<div class="panel-header">Events (' + events.length + ')</div>' +
@@ -535,28 +599,72 @@
       let rows = '';
       for (const run of filtered) {
         rows +=
-          '<tr class="clickable" data-run-id="' + esc(run.run_id) + '">' +
+          '<tr class="clickable" data-run-id="' + esc(run.run_id) + '" tabindex="0" role="button">' +
           '<td><span class="mono">' + esc((run.run_id || '').slice(0, 8)) + '</span></td>' +
           '<td>' + esc(run.workflow_name || '\u2014') + '</td>' +
           '<td>' + statusBadge(run.status || 'unknown') + '</td>' +
-          '<td><span class="mono">' + esc((run.completed_steps || 0) + '/' + (run.total_steps || 0)) + '</span></td>' +
-          '<td><span class="mono">' + fmtDuration(run.duration_ms) + '</span></td>' +
-          '<td><span class="mono" style="color:var(--text-dim);font-size:var(--text-sm)">' + fmtTs(run.started_at) + '</span></td>' +
+          '<td><span class="mono data-metric">' + esc((run.completed_steps || 0) + '/' + (run.total_steps || 0)) + '</span></td>' +
+          '<td><span class="mono data-metric">' + fmtDuration(run.duration_ms) + '</span></td>' +
+          '<td><span class="mono ts-cell">' + fmtTs(run.started_at) + '</span></td>' +
           '</tr>';
       }
       if (filtered.length === 0) {
-        // Replace entire table area with empty message
-        tbody.parentElement.outerHTML = '<div class="empty">No runs match the current filters.</div>';
+        // Replace entire table area with structured empty message
+        tbody.parentElement.outerHTML =
+          '<div class="empty-structured">' +
+          '<div class="empty-heading">No matching runs</div>' +
+          '<div class="empty-text">No runs match the current filters.</div>' +
+          '<div class="empty-action"><button id="filter-clear-empty">Clear all filters</button></div>' +
+          '</div>';
       } else {
         tbody.innerHTML = rows;
       }
     }
 
+    var isFiltered = filtered.length < runs.length;
+
     if (countEl) {
       countEl.textContent = 'Showing ' + filtered.length + ' of ' + runs.length + ' runs';
     }
+
+    // Toggle filter bar active state
+    var bar = document.querySelector('#app .filter-bar');
+    if (bar) {
+      if (isFiltered) {
+        bar.classList.add('filters-active');
+      } else {
+        bar.classList.remove('filters-active');
+      }
+    }
+
+    // Update badges
+    var badgesContainer = document.querySelector('#app .filter-badges');
+    if (badgesContainer) {
+      var badges = '';
+      if (filters.status !== 'all') {
+        badges += '<span class="filter-badge">' +
+          'Status: ' + esc(filters.status.charAt(0).toUpperCase() + filters.status.slice(1)) +
+          ' <button class="filter-badge-remove" data-filter-clear="status" aria-label="Remove status filter">\u00d7</button>' +
+          '</span>';
+      }
+      if (filters.workflow !== 'all') {
+        badges += '<span class="filter-badge">' +
+          esc(filters.workflow) +
+          ' <button class="filter-badge-remove" data-filter-clear="workflow" aria-label="Remove workflow filter">\u00d7</button>' +
+          '</span>';
+      }
+      if (filters.search) {
+        badges += '<span class="filter-badge">' +
+          '\u201c' + esc(filters.search) + '\u201d' +
+          ' <button class="filter-badge-remove" data-filter-clear="search" aria-label="Remove search filter">\u00d7</button>' +
+          '</span>';
+      }
+      badgesContainer.innerHTML = badges;
+    }
+
+    // Show/hide clear button
     if (clearEl) {
-      clearEl.style.display = filtered.length < runs.length ? '' : 'none';
+      clearEl.style.display = isFiltered ? '' : 'none';
     }
   }
 
@@ -578,7 +686,10 @@
     const btn = document.getElementById('refresh-toggle');
     if (dot) dot.classList.add('active');
     if (label) label.textContent = 'Live';
-    if (btn) btn.classList.add('active');
+    if (btn) {
+      btn.classList.add('active');
+      btn.setAttribute('aria-pressed', 'true');
+    }
 
     autoRefreshTimer = setInterval(function () {
       if (currentView !== 'run-list') return;
@@ -603,13 +714,14 @@
       clearInterval(autoRefreshTimer);
       autoRefreshTimer = null;
     }
-    if (!autoRefreshEnabled) {
-      const dot = document.getElementById('refresh-dot');
-      const label = document.getElementById('refresh-label');
-      const btn = document.getElementById('refresh-toggle');
-      if (dot) dot.classList.remove('active');
-      if (label) label.textContent = 'Auto-refresh';
-      if (btn) btn.classList.remove('active');
+    const dot = document.getElementById('refresh-dot');
+    const label = document.getElementById('refresh-label');
+    const btn = document.getElementById('refresh-toggle');
+    if (dot) dot.classList.remove('active');
+    if (label) label.textContent = 'Auto-refresh';
+    if (btn) {
+      btn.classList.remove('active');
+      btn.setAttribute('aria-pressed', 'false');
     }
   }
 
@@ -642,7 +754,7 @@
    * Single delegated click handler on #app.
    * Handles: expandable event rows, step group headers, run table rows.
    */
-  document.getElementById('app').addEventListener('click', function (e) {
+  function handleAppInteraction(e) {
     // Expandable event row
     const eventRow = e.target.closest('.event-row');
     if (eventRow) {
@@ -657,12 +769,44 @@
       return;
     }
 
+    // Clear filters button inside empty state
+    if (e.target.id === 'filter-clear-empty') {
+      filters = { status: 'all', workflow: 'all', search: '' };
+      showRunList(runs);
+      return;
+    }
+
+    // Individual filter badge removal
+    var badgeBtn = e.target.closest('.filter-badge-remove');
+    if (badgeBtn) {
+      var which = badgeBtn.dataset.filterClear;
+      if (which === 'status') { filters.status = 'all'; var s = document.getElementById('filter-status'); if (s) s.value = 'all'; }
+      if (which === 'workflow') { filters.workflow = 'all'; var w = document.getElementById('filter-workflow'); if (w) w.value = 'all'; }
+      if (which === 'search') { filters.search = ''; var i = document.getElementById('filter-search'); if (i) i.value = ''; }
+      refreshRunListView();
+      return;
+    }
+
     // Run table row
     const runRow = e.target.closest('tr.clickable');
     if (runRow) {
       const runId = runRow.dataset.runId;
       if (runId) navigate('run-detail', { runId: runId });
       return;
+    }
+  }
+
+  // Click handler
+  document.getElementById('app').addEventListener('click', handleAppInteraction);
+
+  // Keyboard handler — Enter/Space activates the same as click
+  document.getElementById('app').addEventListener('keydown', function (e) {
+    if (e.key === 'Enter' || e.key === ' ') {
+      const target = e.target;
+      if (target.closest('.event-row') || target.closest('.step-group-header') || target.closest('tr.clickable')) {
+        e.preventDefault();
+        handleAppInteraction(e);
+      }
     }
   });
 
@@ -716,7 +860,7 @@
       })
       .catch(function (err) {
         app.innerHTML =
-          '<div class="empty" style="color:var(--color-error-text)">Error loading runs: ' +
+          '<div class="empty text-error">Error loading runs: ' +
           esc(String(err)) + '</div>';
         document.getElementById('status-bar').textContent = 'Error: ' + String(err);
       });
