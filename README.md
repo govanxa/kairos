@@ -39,7 +39,7 @@ pip install kairos-ai[cli]         # CLI commands: kairos run, kairos validate, 
 
 Kairos has its own built-in schema system that works out of the box. The Pydantic extra is for teams that already use [Pydantic](https://docs.pydantic.dev/) models in their codebase — instead of redefining your data shapes, you can pass them directly via `Schema.from_pydantic(YourModel)`.
 
-**New to Kairos?** Follow the [Getting Started guide](GETTING_STARTED.md) for a step-by-step tutorial.
+**New to Kairos?** Follow the [Getting Started guide](https://github.com/govanxa/kairos/blob/main/GETTING_STARTED.md) for a step-by-step tutorial.
 
 ---
 
@@ -434,13 +434,13 @@ pip install -e ".[dev]"
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for how you can help.
+See [CONTRIBUTING.md](https://github.com/govanxa/kairos/blob/main/CONTRIBUTING.md) for how you can help.
 
 ---
 
 ## License
 
-Apache 2.0 — see [LICENSE](LICENSE) for details.
+Apache 2.0 — see [LICENSE](https://github.com/govanxa/kairos/blob/main/LICENSE) for details.
 
 ---
 
