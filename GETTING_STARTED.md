@@ -1088,9 +1088,11 @@ kairos dashboard --log-dir ./logs --no-auth
 
 ### What you see
 
-**Run list** — A table of all past runs with status badges (green/red/gray), step counts, duration, and timestamps. Click any row to drill into the detail view.
+**Run list** — A filterable table of all past runs with status badges (green/red/gray), step counts, duration, and timestamps. Filter by status (Complete/Failed/Incomplete), workflow name, or free-text search. A "Showing X of Y runs" counter updates as you filter. Click any row to drill into the detail view.
 
-**Run detail** — A summary grid (status, workflow name, duration, steps completed) plus a full event timeline showing every `step_start`, `step_complete`, `step_fail`, `step_retry`, `step_skip`, and validation event.
+**Run detail** — A summary grid (status, workflow name, duration, steps completed) plus a step-grouped timeline. Events are grouped by step into collapsible sections with status badges, durations, and event counts. Failed groups auto-expand so problems are visible immediately. Click any event row to expand and see the full JSON data with syntax coloring (cyan keys, green strings, amber numbers). Workflow-level events appear outside groups.
+
+**Auto-refresh** — Toggle live mode via the header button (pulsing green dot when active). Choose an interval (2s/5s/10s/30s). New runs appear in the filtered table automatically. Auto-refresh pauses when viewing a run detail page.
 
 ### API endpoints
 
@@ -1116,7 +1118,7 @@ The dashboard is designed for **single-user local use**:
 - **CSP headers** — `Content-Security-Policy` and `X-Content-Type-Options: nosniff` on every response, including errors.
 - **Read-only** — `GET` only. `POST`, `PUT`, `DELETE`, and other methods return `405 Method Not Allowed`.
 - **Pre-redacted data** — the dashboard reads `.jsonl` files that were already redacted by `RunLogger`. Sensitive keys appear as `[REDACTED]` — the dashboard never sees the raw values.
-- **No external resources** — the entire UI (HTML, CSS, JS) is embedded in a single Python string. Nothing is loaded from CDNs or external URLs.
+- **No external resources** — the UI (HTML, CSS, JS) is served from `kairos/dashboard_ui/` as static files loaded into memory at startup. Nothing is loaded from CDNs or external URLs.
 
 ---
 

@@ -213,7 +213,7 @@ kairos run my_workflow.py --log-format jsonl --log-file ./logs
 kairos dashboard --log-dir ./logs --open
 ```
 
-The dashboard serves a single-page web UI on `127.0.0.1:8420` with a token-authenticated API. View all past runs in a table, click into any run to see step-by-step timelines, and inspect events. Zero new dependencies — built on Python's stdlib `http.server`.
+The dashboard serves a single-page web UI on `127.0.0.1:8420` with a token-authenticated API. Browse all past runs in a filterable table (status, workflow name, text search), click into any run to see a step-grouped timeline with collapsible sections, and expand event rows to inspect full JSON data with syntax coloring. Auto-refresh keeps the view current while you iterate. Zero new dependencies — built on Python's stdlib `http.server`.
 
 **Security (S17):** Binds to `127.0.0.1` only (never `0.0.0.0`), random token auth via `hmac.compare_digest()`, CSP headers on every response, strictly read-only (`GET` only), reads pre-redacted log files.
 
@@ -401,7 +401,7 @@ python examples/scoped_state.py
 | Dashboard (`kairos dashboard` — localhost web UI) | Done |
 | Plugin System | Planned |
 
-1,470 tests passing, 97% coverage across 20 source files.
+1,499 tests passing, 98% coverage across 20 source files.
 
 ---
 
