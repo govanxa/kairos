@@ -1,10 +1,11 @@
 """Kairos CLI — command-line runner for workflow execution and validation.
 
-Provides four commands for v0.4.1:
+Provides five commands for v0.4.3:
 - ``kairos run <module>``      Execute a workflow module.
 - ``kairos validate <module>`` Dry-run plan and contract validation.
 - ``kairos version``           Print the Kairos SDK version.
 - ``kairos inspect <target>``  Inspect a .jsonl run log file.
+- ``kairos dashboard``         Start a local read-only web dashboard.
 
 Security contracts (S13):
 - Module paths are validated with a strict regex before import_module() is called.
@@ -1037,6 +1038,60 @@ def inspect(
         typer.echo(line)
 
     raise typer.Exit(code=0)
+
+
+# ---------------------------------------------------------------------------
+# dashboard command
+# ---------------------------------------------------------------------------
+
+
+@app.command()  # type: ignore[misc]
+def dashboard(
+    port: Annotated[
+        int,
+        typer.Option("--port", "-p", help="TCP port to serve on."),
+    ] = 8420,
+    log_dir: Annotated[
+        str,
+        typer.Option("--log-dir", help="Directory containing .jsonl run log files."),
+    ] = ".",
+    no_auth: Annotated[
+        bool,
+        typer.Option("--no-auth", help="Disable token authentication (prints security warning)."),
+    ] = False,
+    open_browser: Annotated[
+        bool,
+        typer.Option("--open", help="Open the dashboard URL in the default browser."),
+    ] = False,
+) -> None:
+    """Start a local read-only web dashboard for run history visualization.
+
+    The dashboard binds to ``127.0.0.1`` only and requires a token by default.
+    The URL with auth token is printed to stdout on startup.
+
+    Use ``--log-dir`` to point at a directory of ``.jsonl`` run log files
+    produced with ``kairos run --log-format=jsonl``.
+
+    Use ``--no-auth`` to disable token authentication (not recommended for
+    shared machines — a security warning is printed to stderr).
+    """
+    if not os.path.isdir(log_dir):
+        typer.echo(f"Error: --log-dir does not exist: {log_dir!r}", err=True)
+        raise typer.Exit(code=2)
+
+    from kairos.dashboard import start_dashboard
+
+    try:
+        start_dashboard(
+            port=port,
+            log_dir=log_dir,
+            no_auth=no_auth,
+            open_browser=open_browser,
+        )
+    except OSError as exc:
+        err_type, err_msg = sanitize_exception(exc)
+        typer.echo(f"Error starting dashboard: {err_type}: {err_msg}", err=True)
+        raise typer.Exit(code=1) from None
 
 
 # ---------------------------------------------------------------------------

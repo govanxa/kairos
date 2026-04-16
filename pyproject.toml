@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "kairos-ai"
-version = "0.4.2"
+version = "0.4.3"
 description = "Security-hardened, model-agnostic Python SDK for contract-enforced AI agent workflows"
 readme = "README.md"
 license = "Apache-2.0"
@@ -99,9 +99,10 @@ ignore = [
 ]
 
 [tool.ruff.lint.per-file-ignores]
-"tests/**/*.py" = ["S101", "S105", "S106", "T20"]  # allow assert, hardcoded passwords (test fixtures), and print in tests
+"tests/**/*.py" = ["S101", "S105", "S106", "T20", "S310", "SIM108"]  # allow assert, hardcoded passwords, print, URL open, ternary
 "examples/**/*.py" = ["T20", "S101"]  # allow print and assert in examples
 "kairos/cli.py" = ["T20", "A002", "E402"]  # allow print, built-in shadowing, import order (try/except guard)
+"kairos/dashboard.py" = ["T20", "N802", "A002", "E501"]  # allow print, HTTP method names, param shadowing, long HTML lines
 
 [tool.mypy]
 python_version = "3.11"
