@@ -9,6 +9,12 @@ Dashboard module tests covering all S17 security requirements:
   S17.6: No import of kairos.state or kairos.logger (data isolation)
   S17.7: Run ID path traversal prevention
 
+v0.4.4 additions:
+  - TestUIFilesExist — dashboard_ui/ files on disk and loaded at import time
+  - TestStaticFileServing — /static/styles.css and /static/app.js routes
+  - TestCSPUpdate — 'unsafe-inline' removed from script-src
+  - TestVersionBump — version is 0.4.4
+
 Test priority order (TDD):
 1. Security (S17) — first and most important
 2. Failure paths — bad log_dir, missing run_id, malformed files, unknown paths
@@ -367,11 +373,19 @@ class TestS17CspHeaders:
         assert "content-security-policy" in headers
 
     def test_csp_constant_matches_spec(self):
-        """_CSP_HEADER constant must match the spec value."""
+        """_CSP_HEADER constant must NOT have unsafe-inline in script-src (v0.4.4 tightened CSP).
+
+        After file extraction JS loads from /static/app.js (same-origin),
+        so 'unsafe-inline' can be removed from script-src.  style-src still
+        keeps 'unsafe-inline' because JS sets inline styles on DOM elements.
+        """
         from kairos.dashboard import _CSP_HEADER
 
         assert "default-src 'self'" in _CSP_HEADER
-        assert "script-src 'self' 'unsafe-inline'" in _CSP_HEADER
+        # script-src must NOT have 'unsafe-inline' — tightened in v0.4.4
+        assert "script-src 'self'" in _CSP_HEADER
+        assert "script-src 'self' 'unsafe-inline'" not in _CSP_HEADER
+        # style-src keeps unsafe-inline for dynamic inline styles
         assert "style-src 'self' 'unsafe-inline'" in _CSP_HEADER
 
 
@@ -1049,17 +1063,17 @@ class TestModuleConstants:
 
         assert _TOKEN_LENGTH == 32
 
-    def test_dashboard_html_is_complete_document(self):
-        """_DASHBOARD_HTML must be a non-empty string containing HTML boilerplate."""
-        from kairos.dashboard import _DASHBOARD_HTML
+    def test_index_html_is_complete_document(self):
+        """_INDEX_HTML must be a non-empty string containing HTML boilerplate."""
+        from kairos.dashboard import _INDEX_HTML
 
-        assert isinstance(_DASHBOARD_HTML, str)
-        assert len(_DASHBOARD_HTML) > 100
-        assert "<html" in _DASHBOARD_HTML.lower() or "<!DOCTYPE" in _DASHBOARD_HTML
+        assert isinstance(_INDEX_HTML, str)
+        assert len(_INDEX_HTML) > 100
+        assert "<html" in _INDEX_HTML.lower() or "<!DOCTYPE" in _INDEX_HTML
 
-    def test_dashboard_html_has_no_external_resources(self):
-        """_DASHBOARD_HTML must not reference external URLs (CDN, fonts, etc.)."""
-        from kairos.dashboard import _DASHBOARD_HTML
+    def test_index_html_has_no_external_resources(self):
+        """_INDEX_HTML must not reference external URLs (CDN, fonts, etc.)."""
+        from kairos.dashboard import _INDEX_HTML
 
         # These common CDN patterns must not appear
         forbidden = [
@@ -1070,28 +1084,262 @@ class TestModuleConstants:
             "https://ajax",
         ]
         for pattern in forbidden:
-            assert pattern not in _DASHBOARD_HTML, (
-                f"_DASHBOARD_HTML must not reference external resource: {pattern}"
+            assert pattern not in _INDEX_HTML, (
+                f"_INDEX_HTML must not reference external resource: {pattern}"
             )
 
-    def test_dashboard_html_fetches_api_with_token(self):
-        """_DASHBOARD_HTML JavaScript must pass the auth token when fetching API."""
-        from kairos.dashboard import _DASHBOARD_HTML
+    def test_app_js_fetches_api_with_token(self):
+        """_APP_JS JavaScript must pass the auth token when fetching API."""
+        from kairos.dashboard import _APP_JS
 
         # The JS should reference /api/runs and include token logic
-        assert "/api/runs" in _DASHBOARD_HTML
-        assert "token" in _DASHBOARD_HTML
+        assert "/api/runs" in _APP_JS
+        assert "token" in _APP_JS
 
-    def test_dashboard_html_contains_title(self):
-        """_DASHBOARD_HTML must contain 'Kairos Dashboard' title."""
-        from kairos.dashboard import _DASHBOARD_HTML
+    def test_index_html_contains_title(self):
+        """_INDEX_HTML must contain 'Kairos Dashboard' title."""
+        from kairos.dashboard import _INDEX_HTML
 
-        assert "Kairos Dashboard" in _DASHBOARD_HTML
+        assert "Kairos Dashboard" in _INDEX_HTML
+
+    def test_styles_css_is_nonempty_string(self):
+        """_STYLES_CSS must be a non-empty string with CSS content."""
+        from kairos.dashboard import _STYLES_CSS
+
+        assert isinstance(_STYLES_CSS, str)
+        assert len(_STYLES_CSS) > 100
+        assert ":root" in _STYLES_CSS  # must have design system variables
+
+    def test_app_js_is_nonempty_string(self):
+        """_APP_JS must be a non-empty string with JavaScript content."""
+        from kairos.dashboard import _APP_JS
+
+        assert isinstance(_APP_JS, str)
+        assert len(_APP_JS) > 100
 
 
 # ---------------------------------------------------------------------------
 # Group 8: Edge case tests added by QA
 # ---------------------------------------------------------------------------
+
+
+# ---------------------------------------------------------------------------
+# Group 9: v0.4.4 — UI file extraction tests (written BEFORE implementation)
+# ---------------------------------------------------------------------------
+
+
+class TestUIFilesExist:
+    """Verify dashboard_ui/ files exist on disk and are loaded at import time."""
+
+    def test_ui_dir_constant_defined(self):
+        """_UI_DIR module constant must be defined and be a Path."""
+        from pathlib import Path
+
+        from kairos.dashboard import _UI_DIR
+
+        assert isinstance(_UI_DIR, Path)
+
+    def test_index_html_file_exists_on_disk(self):
+        """kairos/dashboard_ui/index.html must exist on disk."""
+        from kairos.dashboard import _UI_DIR
+
+        assert (_UI_DIR / "index.html").exists(), "dashboard_ui/index.html must exist"
+
+    def test_styles_css_file_exists_on_disk(self):
+        """kairos/dashboard_ui/styles.css must exist on disk."""
+        from kairos.dashboard import _UI_DIR
+
+        assert (_UI_DIR / "styles.css").exists(), "dashboard_ui/styles.css must exist"
+
+    def test_app_js_file_exists_on_disk(self):
+        """kairos/dashboard_ui/app.js must exist on disk."""
+        from kairos.dashboard import _UI_DIR
+
+        assert (_UI_DIR / "app.js").exists(), "dashboard_ui/app.js must exist"
+
+    def test_index_html_loaded_into_module_var(self):
+        """_INDEX_HTML module var must be loaded from the file (not empty)."""
+        from kairos.dashboard import _INDEX_HTML, _UI_DIR
+
+        on_disk = (_UI_DIR / "index.html").read_text(encoding="utf-8")
+        assert on_disk == _INDEX_HTML
+
+    def test_styles_css_loaded_into_module_var(self):
+        """_STYLES_CSS module var must be loaded from the file (not empty)."""
+        from kairos.dashboard import _STYLES_CSS, _UI_DIR
+
+        on_disk = (_UI_DIR / "styles.css").read_text(encoding="utf-8")
+        assert on_disk == _STYLES_CSS
+
+    def test_app_js_loaded_into_module_var(self):
+        """_APP_JS module var must be loaded from the file (not empty)."""
+        from kairos.dashboard import _APP_JS, _UI_DIR
+
+        on_disk = (_UI_DIR / "app.js").read_text(encoding="utf-8")
+        assert on_disk == _APP_JS
+
+    def test_index_html_references_static_css(self):
+        """index.html must reference /static/styles.css via a <link> tag."""
+        from kairos.dashboard import _INDEX_HTML
+
+        assert "/static/styles.css" in _INDEX_HTML
+
+    def test_index_html_references_static_js(self):
+        """index.html must reference /static/app.js via a <script src> tag."""
+        from kairos.dashboard import _INDEX_HTML
+
+        assert "/static/app.js" in _INDEX_HTML
+
+    def test_index_html_has_no_inline_script(self):
+        """index.html must NOT have inline <script> blocks (CSP compliance)."""
+        import re
+
+        from kairos.dashboard import _INDEX_HTML
+
+        # Matches <script> without a src attribute (inline script)
+        pattern = r"<script(?![^>]*\bsrc\b)[^>]*>.*?</script>"
+        inline_script = re.search(pattern, _INDEX_HTML, re.DOTALL)
+        assert inline_script is None, (
+            f"index.html must not have inline scripts: found {inline_script}"
+        )
+
+    def test_index_html_has_no_external_urls(self):
+        """index.html must not reference any external URLs."""
+        from kairos.dashboard import _INDEX_HTML
+
+        forbidden = [
+            "cdn.jsdelivr.net",
+            "unpkg.com",
+            "cdnjs.cloudflare.com",
+            "fonts.googleapis.com",
+            "https://ajax",
+        ]
+        for pattern in forbidden:
+            assert pattern not in _INDEX_HTML, (
+                f"index.html must not reference external resource: {pattern}"
+            )
+
+
+class TestStaticFileServing:
+    """Static file routes: /static/styles.css and /static/app.js."""
+
+    def test_static_css_returns_200_with_auth(self, dashboard_server):
+        """GET /static/styles.css with valid token must return 200."""
+        _server, base_url, token = dashboard_server
+        status, _data = _fetch(f"{base_url}/static/styles.css", token=token)
+        assert status == 200
+
+    def test_static_js_returns_200_with_auth(self, dashboard_server):
+        """GET /static/app.js with valid token must return 200."""
+        _server, base_url, token = dashboard_server
+        status, _data = _fetch(f"{base_url}/static/app.js", token=token)
+        assert status == 200
+
+    def test_static_css_content_type(self, dashboard_server):
+        """GET /static/styles.css must return Content-Type: text/css."""
+        _server, base_url, token = dashboard_server
+        _status, data = _fetch(f"{base_url}/static/styles.css", token=token)
+        headers = {k.lower(): v for k, v in data["headers"].items()}
+        assert "text/css" in headers.get("content-type", "")
+
+    def test_static_js_content_type(self, dashboard_server):
+        """GET /static/app.js must return Content-Type: text/javascript."""
+        _server, base_url, token = dashboard_server
+        _status, data = _fetch(f"{base_url}/static/app.js", token=token)
+        headers = {k.lower(): v for k, v in data["headers"].items()}
+        ct = headers.get("content-type", "")
+        assert "javascript" in ct
+
+    def test_static_css_has_csp_header(self, dashboard_server):
+        """GET /static/styles.css must include CSP header."""
+        _server, base_url, token = dashboard_server
+        _status, data = _fetch(f"{base_url}/static/styles.css", token=token)
+        headers = {k.lower(): v for k, v in data["headers"].items()}
+        assert "content-security-policy" in headers
+
+    def test_static_js_has_csp_header(self, dashboard_server):
+        """GET /static/app.js must include CSP header."""
+        _server, base_url, token = dashboard_server
+        _status, data = _fetch(f"{base_url}/static/app.js", token=token)
+        headers = {k.lower(): v for k, v in data["headers"].items()}
+        assert "content-security-policy" in headers
+
+    def test_static_css_no_auth_required(self, dashboard_server):
+        """GET /static/styles.css must work WITHOUT token (browser loads via <link>)."""
+        _server, base_url, _token = dashboard_server
+        status, _data = _fetch(f"{base_url}/static/styles.css")
+        assert status == 200
+
+    def test_static_js_no_auth_required(self, dashboard_server):
+        """GET /static/app.js must work WITHOUT token (browser loads via <script>)."""
+        _server, base_url, _token = dashboard_server
+        status, _data = _fetch(f"{base_url}/static/app.js")
+        assert status == 200
+
+    def test_unknown_static_path_returns_404(self, dashboard_server):
+        """GET /static/unknown.xyz must return 404."""
+        _server, base_url, _token = dashboard_server
+        status, _data = _fetch(f"{base_url}/static/unknown.xyz")
+        assert status == 404
+
+    def test_no_static_path_traversal(self, dashboard_server):
+        """GET /static/../dashboard.py must not serve Python source."""
+        _server, base_url, token = dashboard_server
+        status, data = _fetch(f"{base_url}/static/..%2Fdashboard.py", token=token)
+        # Should get 404, not 200 with Python source
+        assert status == 404
+
+    def test_static_css_body_contains_design_tokens(self, dashboard_server):
+        """styles.css response body must contain :root CSS custom properties."""
+        _server, base_url, token = dashboard_server
+        _status, data = _fetch(f"{base_url}/static/styles.css", token=token)
+        assert ":root" in data["body"]
+        assert "--bg-950" in data["body"]  # a specific design token
+
+
+class TestCSPUpdate:
+    """v0.4.4 tightened CSP — 'unsafe-inline' removed from script-src."""
+
+    def test_script_src_has_no_unsafe_inline(self):
+        """_CSP_HEADER must NOT contain 'unsafe-inline' in script-src."""
+        from kairos.dashboard import _CSP_HEADER
+
+        # Parse script-src directive
+        parts = [p.strip() for p in _CSP_HEADER.split(";")]
+        script_src = next((p for p in parts if p.startswith("script-src")), "")
+        assert "'unsafe-inline'" not in script_src, (
+            f"script-src must not have 'unsafe-inline' after v0.4.4: {script_src!r}"
+        )
+
+    def test_style_src_still_has_unsafe_inline(self):
+        """_CSP_HEADER must still have 'unsafe-inline' in style-src (dynamic inline styles)."""
+        from kairos.dashboard import _CSP_HEADER
+
+        parts = [p.strip() for p in _CSP_HEADER.split(";")]
+        style_src = next((p for p in parts if p.startswith("style-src")), "")
+        assert "'unsafe-inline'" in style_src, f"style-src must keep 'unsafe-inline': {style_src!r}"
+
+    def test_default_src_self_present(self):
+        """_CSP_HEADER must have default-src 'self'."""
+        from kairos.dashboard import _CSP_HEADER
+
+        assert "default-src 'self'" in _CSP_HEADER
+
+    def test_script_src_self_present(self):
+        """_CSP_HEADER must have script-src 'self'."""
+        from kairos.dashboard import _CSP_HEADER
+
+        assert "script-src 'self'" in _CSP_HEADER
+
+
+class TestVersionBump:
+    """v0.4.4 version must be reflected in the package."""
+
+    def test_version_is_0_4_4(self):
+        """kairos.__version__ must be '0.4.4'."""
+        import kairos
+
+        assert kairos.__version__ == "0.4.4"
 
 
 class TestEdgeCases:

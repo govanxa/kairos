@@ -38,262 +38,34 @@ from typing import cast
 _DEFAULT_PORT: int = 8420
 _BIND_HOST: str = "127.0.0.1"
 _TOKEN_LENGTH: int = 32
-_CSP_HEADER: str = (
-    "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'"
-)
+
+# v0.4.4: 'unsafe-inline' removed from script-src — JS now loads from
+# /static/app.js (same-origin), so inline scripts are no longer needed.
+# style-src keeps 'unsafe-inline' because JS sets inline styles on DOM elements.
+_CSP_HEADER: str = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'"
 
 # Safe run ID pattern: only allow alphanumeric, hyphens, underscores
 # Rejects: .., /, \, %, spaces, and other traversal patterns
 _SAFE_RUN_ID_RE = re.compile(r"^[a-zA-Z0-9_-]+$")
 
 # ---------------------------------------------------------------------------
-# Embedded single-page HTML dashboard
+# Static UI files — loaded once at import time (not per-request)
 # ---------------------------------------------------------------------------
 
-_DASHBOARD_HTML: str = """<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Kairos Dashboard</title>
-<style>
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-         background: #0f172a; color: #e2e8f0; min-height: 100vh; }
-  .header { background: #1e293b; border-bottom: 1px solid #334155;
-            padding: 16px 24px; display: flex; align-items: center; gap: 12px; }
-  .header h1 { font-size: 1.25rem; font-weight: 700; color: #f8fafc; }
-  .header span { font-size: 0.75rem; color: #94a3b8; background: #0f172a;
-                 padding: 2px 8px; border-radius: 9999px; }
-  .main { padding: 24px; }
-  .panel { background: #1e293b; border: 1px solid #334155; border-radius: 8px;
-           margin-bottom: 24px; }
-  .panel-header { padding: 14px 20px; border-bottom: 1px solid #334155;
-                  font-size: 0.875rem; font-weight: 600; color: #94a3b8;
-                  text-transform: uppercase; letter-spacing: 0.05em; }
-  table { width: 100%; border-collapse: collapse; }
-  th { padding: 10px 20px; text-align: left; font-size: 0.75rem;
-       font-weight: 600; color: #64748b; text-transform: uppercase;
-       letter-spacing: 0.05em; border-bottom: 1px solid #334155; }
-  td { padding: 12px 20px; font-size: 0.875rem; border-bottom: 1px solid #1e293b; }
-  tr:last-child td { border-bottom: none; }
-  tr.clickable:hover { background: #263548; cursor: pointer; }
-  .badge { display: inline-block; padding: 2px 8px; border-radius: 9999px;
-           font-size: 0.75rem; font-weight: 600; }
-  .badge-complete { background: #14532d; color: #86efac; }
-  .badge-failed   { background: #450a0a; color: #fca5a5; }
-  .badge-incomplete { background: #1c1917; color: #a8a29e; }
-  .badge-other    { background: #1c1917; color: #a8a29e; }
-  .event-list { list-style: none; padding: 16px 20px; }
-  .event-list li { display: flex; gap: 12px; padding: 6px 0;
-                   border-bottom: 1px solid #1e293b; font-size: 0.8125rem; }
-  .event-list li:last-child { border-bottom: none; }
-  .evt-ts { color: #475569; min-width: 86px; }
-  .evt-type { color: #7dd3fc; min-width: 180px; }
-  .evt-data { color: #94a3b8; word-break: break-all; }
-  .evt-error { background: #1c0a0a; border-left: 3px solid #ef4444; padding-left: 9px; }
-  .evt-error .evt-type { color: #fca5a5; font-weight: 600; }
-  .evt-error .evt-data { color: #fca5a5; }
-  .evt-warn { background: #1c1508; border-left: 3px solid #eab308; padding-left: 9px; }
-  .evt-warn .evt-type { color: #fde68a; font-weight: 600; }
-  .evt-warn .evt-data { color: #fde68a; }
-  .back-btn { background: #334155; border: none; color: #e2e8f0; padding: 8px 16px;
-              border-radius: 6px; cursor: pointer; margin-bottom: 16px;
-              font-size: 0.875rem; }
-  .back-btn:hover { background: #475569; }
-  .summary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
-                  gap: 1px; background: #334155; }
-  .summary-cell { background: #1e293b; padding: 16px 20px; }
-  .summary-cell .label { font-size: 0.7rem; color: #64748b; text-transform: uppercase;
-                         letter-spacing: 0.05em; margin-bottom: 4px; }
-  .summary-cell .value { font-size: 1.25rem; font-weight: 700; color: #f8fafc; }
-  #status-bar { padding: 10px 24px; font-size: 0.8rem; color: #64748b;
-                background: #1e293b; border-top: 1px solid #334155;
-                position: fixed; bottom: 0; left: 0; right: 0; }
-  .empty { padding: 40px 20px; text-align: center; color: #475569; font-size: 0.875rem; }
-</style>
-</head>
-<body>
-<div class="header">
-  <h1>Kairos Dashboard</h1>
-  <span id="run-count">loading…</span>
-</div>
-<div class="main" id="app">
-  <div class="empty">Loading run history…</div>
-</div>
-<div id="status-bar">Connecting…</div>
-<script>
-(function() {
-  // Extract auth token from the current URL query string
-  const params = new URLSearchParams(window.location.search);
-  const TOKEN = params.get('token') || '';
+# _UI_DIR is the dashboard_ui/ package directory sitting next to this file.
+_UI_DIR: Path = Path(__file__).parent / "dashboard_ui"
+_INDEX_HTML: str = (_UI_DIR / "index.html").read_text(encoding="utf-8")
+_STYLES_CSS: str = (_UI_DIR / "styles.css").read_text(encoding="utf-8")
+_APP_JS: str = (_UI_DIR / "app.js").read_text(encoding="utf-8")
 
-  function apiUrl(path) {
-    return TOKEN ? path + '?token=' + encodeURIComponent(TOKEN) : path;
-  }
+# Backward-compatibility alias so any existing code referencing _DASHBOARD_HTML still works.
+_DASHBOARD_HTML: str = _INDEX_HTML
 
-  function statusBadge(status) {
-    const cls = status === 'complete' ? 'badge-complete'
-              : status === 'failed'   ? 'badge-failed'
-              : status === 'incomplete' ? 'badge-incomplete'
-              : 'badge-other';
-    return '<span class="badge ' + cls + '">' + esc(status) + '</span>';
-  }
-
-  function esc(s) {
-    return String(s)
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;');
-  }
-
-  function fmtDuration(ms) {
-    if (!ms) return '—';
-    if (ms < 1000) return Math.round(ms) + 'ms';
-    return (ms / 1000).toFixed(2) + 's';
-  }
-
-  function fmtTs(ts) {
-    if (!ts) return '—';
-    try { return new Date(ts).toLocaleString(); } catch(e) { return ts; }
-  }
-
-  function fmtTsShort(ts) {
-    if (!ts) return '—';
-    try { return new Date(ts).toLocaleTimeString(); } catch(e) { return ts; }
-  }
-
-  async function fetchJson(path) {
-    const resp = await fetch(apiUrl(path));
-    if (!resp.ok) throw new Error('HTTP ' + resp.status);
-    return resp.json();
-  }
-
-  function showRunList(runs) {
-    const app = document.getElementById('app');
-    document.getElementById('run-count').textContent =
-      runs.length + ' run' + (runs.length !== 1 ? 's' : '');
-
-    if (runs.length === 0) {
-      app.innerHTML = '<div class="panel"><div class="empty">' +
-        'No runs found. Run a workflow with <code>--log-format=jsonl</code> to populate the dashboard.' +
-        '</div></div>';
-      return;
-    }
-
-    let rows = '';
-    for (const run of runs) {
-      rows += '<tr class="clickable" data-run-id="' + esc(run.run_id) + '">' +
-        '<td><code style="font-size:0.75rem;color:#94a3b8">' + esc((run.run_id||'').slice(0,8)) + '</code></td>' +
-        '<td>' + esc(run.workflow_name || '—') + '</td>' +
-        '<td>' + statusBadge(run.status || 'unknown') + '</td>' +
-        '<td>' + esc((run.completed_steps||0) + '/' + (run.total_steps||0)) + '</td>' +
-        '<td>' + fmtDuration(run.duration_ms) + '</td>' +
-        '<td style="color:#64748b;font-size:0.75rem">' + fmtTs(run.started_at) + '</td>' +
-        '</tr>';
-    }
-
-    app.innerHTML =
-      '<div class="panel">' +
-      '<div class="panel-header">Run History</div>' +
-      '<table>' +
-      '<thead><tr>' +
-        '<th>Run ID</th><th>Workflow</th><th>Status</th>' +
-        '<th>Steps</th><th>Duration</th><th>Started</th>' +
-      '</tr></thead>' +
-      '<tbody>' + rows + '</tbody>' +
-      '</table></div>';
-
-    document.querySelectorAll('tr.clickable').forEach(function(row) {
-      row.addEventListener('click', function() {
-        const runId = row.getAttribute('data-run-id');
-        if (runId) showRunDetail(runId);
-      });
-    });
-  }
-
-  function showRunDetail(runId) {
-    const app = document.getElementById('app');
-    app.innerHTML = '<div class="empty">Loading run ' + esc(runId) + '…</div>';
-
-    fetchJson('/api/runs/' + encodeURIComponent(runId))
-      .then(function(data) {
-        const summary = data.summary || {};
-        const events = data.events || [];
-
-        const summaryHtml =
-          '<div class="panel" style="margin-bottom:16px">' +
-          '<div class="panel-header">Run Summary — ' + esc(runId.slice(0,8)) + '</div>' +
-          '<div class="summary-grid">' +
-            '<div class="summary-cell"><div class="label">Status</div>' +
-              '<div class="value">' + statusBadge(summary.status || 'unknown') + '</div></div>' +
-            '<div class="summary-cell"><div class="label">Workflow</div>' +
-              '<div class="value" style="font-size:1rem">' + esc(summary.workflow_name||'?') + '</div></div>' +
-            '<div class="summary-cell"><div class="label">Duration</div>' +
-              '<div class="value">' + fmtDuration(summary.duration_ms) + '</div></div>' +
-            '<div class="summary-cell"><div class="label">Steps</div>' +
-              '<div class="value">' + esc((summary.completed_steps||0)+'/'+  (summary.total_steps||0)) + '</div></div>' +
-          '</div></div>';
-
-        let evtItems = '';
-        for (const evt of events) {
-          const ts = fmtTsShort(evt.timestamp);
-          const data = evt.data || {};
-          const dataStr = Object.keys(data).length
-            ? JSON.stringify(data).slice(0, 120)
-            : '';
-          const et = evt.event_type || '';
-          const rowCls = (et === 'step_fail' || et === 'validation_fail')
-            ? ' evt-error'
-            : (et === 'step_retry')
-            ? ' evt-warn'
-            : '';
-          evtItems += '<li class="' + rowCls + '">' +
-            '<span class="evt-ts">' + esc(ts) + '</span>' +
-            '<span class="evt-type">' + esc(et) + '</span>' +
-            '<span class="evt-data">' + esc(dataStr) + '</span>' +
-            '</li>';
-        }
-
-        app.innerHTML =
-          '<button class="back-btn" id="back-btn">&#8592; Back to runs</button>' +
-          summaryHtml +
-          '<div class="panel">' +
-          '<div class="panel-header">Events (' + events.length + ')</div>' +
-          (evtItems
-            ? '<ul class="event-list">' + evtItems + '</ul>'
-            : '<div class="empty">No events recorded.</div>') +
-          '</div>';
-
-        document.getElementById('back-btn').addEventListener('click', loadRuns);
-      })
-      .catch(function(err) {
-        app.innerHTML = '<div class="empty">Error loading run detail: ' + esc(String(err)) + '</div>' +
-          '<button class="back-btn" onclick="history.back()">&#8592; Back</button>';
-      });
-  }
-
-  function loadRuns() {
-    const app = document.getElementById('app');
-    app.innerHTML = '<div class="empty">Loading…</div>';
-    fetchJson('/api/runs')
-      .then(showRunList)
-      .catch(function(err) {
-        app.innerHTML = '<div class="empty" style="color:#fca5a5">Error loading runs: ' +
-          esc(String(err)) + '</div>';
-        document.getElementById('status-bar').textContent = 'Error: ' + String(err);
-      });
-  }
-
-  // Boot
-  document.getElementById('status-bar').textContent =
-    TOKEN ? 'Authenticated — ' + window.location.host : 'No auth — ' + window.location.host;
-  loadRuns();
-})();
-</script>
-</body>
-</html>"""
+# Allowed static file paths — restricts /static/ route to known filenames only.
+_STATIC_FILES: dict[str, tuple[str, str]] = {
+    "/static/styles.css": ("text/css; charset=utf-8", _STYLES_CSS),
+    "/static/app.js": ("text/javascript; charset=utf-8", _APP_JS),
+}
 
 
 # ---------------------------------------------------------------------------
@@ -574,6 +346,27 @@ class DashboardHandler(BaseHTTPRequestHandler):
 
     # ---------- response helpers ----------
 
+    def _send_static(self, path: str) -> None:
+        """Serve a static UI asset from the pre-loaded _STATIC_FILES dict.
+
+        Only allows paths explicitly listed in _STATIC_FILES.  Any other path
+        — including traversal attempts — returns 404.
+
+        Args:
+            path: The URL path portion (e.g. '/static/styles.css').
+        """
+        entry = _STATIC_FILES.get(path)
+        if entry is None:
+            self._send_error_json(404, "Not found")
+            return
+        content_type, body_str = entry
+        body = body_str.encode("utf-8")
+        self.send_response(200)
+        self._set_common_headers(content_type)
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
     def _send_json(self, data: object, status: int = 200) -> None:
         """Serialize *data* to JSON and send as a response.
 
@@ -614,8 +407,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
     # ---------- route handlers ----------
 
     def _handle_index(self) -> None:
-        """Serve the single-page HTML dashboard."""
-        self._send_html(_DASHBOARD_HTML)
+        """Serve the single-page HTML dashboard (loaded from dashboard_ui/index.html)."""
+        self._send_html(_INDEX_HTML)
 
     def _handle_api_runs(self) -> None:
         """List all runs as JSON (GET /api/runs)."""
@@ -658,6 +451,21 @@ class DashboardHandler(BaseHTTPRequestHandler):
         # Health check — no auth required
         if path == "/api/health":
             self._handle_api_health()
+            return
+
+        # Static assets — no auth required (CSS/JS contain no sensitive data;
+        # the browser loads them via <link>/<script> tags which cannot carry
+        # the auth token. The API endpoints that serve actual run data still
+        # require auth.)
+        if path.startswith("/static/"):
+            self._send_static(path)
+            return
+
+        # Favicon — browsers request this automatically. Return 204 No Content
+        # to suppress the 403 error in the browser console.
+        if path == "/favicon.ico":
+            self.send_response(204)
+            self.end_headers()
             return
 
         # All other endpoints require authentication
