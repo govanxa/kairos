@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
+from typing import cast
 
 from kairos import (
     FailureAction,
@@ -44,7 +45,7 @@ from kairos.logger import ConsoleSink, JSONLinesSink
 # ---------------------------------------------------------------------------
 
 
-def fetch_competitors(ctx: StepContext) -> dict:
+def fetch_competitors(ctx: StepContext) -> dict[str, object]:
     """Fetch a list of competitors from state."""
     industry = ctx.state.get("industry", "technology")
     return {
@@ -53,7 +54,7 @@ def fetch_competitors(ctx: StepContext) -> dict:
     }
 
 
-def analyze_competitor(ctx: StepContext) -> dict:
+def analyze_competitor(ctx: StepContext) -> dict[str, object]:
     """Analyze a single competitor (runs once per item via foreach)."""
     company = ctx.item
     return {
@@ -64,11 +65,11 @@ def analyze_competitor(ctx: StepContext) -> dict:
     }
 
 
-def write_report(ctx: StepContext) -> dict:
+def write_report(ctx: StepContext) -> dict[str, object]:
     """Synthesize all analyses into a final report."""
-    analyses = ctx.inputs["analyze"]
-    names = [a["name"] for a in analyses]
-    avg_score = sum(a["score"] for a in analyses) / len(analyses)
+    analyses = cast(list[dict[str, object]], ctx.inputs["analyze"])
+    names = [str(a["name"]) for a in analyses]
+    avg_score = sum(float(str(a["score"])) for a in analyses) / len(analyses)
     return {
         "title": "Competitive Analysis Report",
         "companies_analyzed": len(names),
@@ -105,10 +106,10 @@ report_schema = Schema(
 LOG_DIR = Path("dashboard_logs")
 
 
-def run_workflow(name: str, inputs: dict, fail_step: str | None = None) -> None:
+def run_workflow(name: str, inputs: dict[str, object], fail_step: str | None = None) -> None:
     """Run a workflow variant and log to the dashboard_logs directory."""
 
-    def maybe_fail(ctx: StepContext) -> dict:
+    def maybe_fail(ctx: StepContext) -> dict[str, object]:
         """A step that raises an error (for demonstrating failures)."""
         raise RuntimeError("Simulated failure for dashboard demo")
 
