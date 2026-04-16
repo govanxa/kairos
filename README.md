@@ -206,14 +206,24 @@ Browse run history in your browser — no cloud, no setup, just `localhost`:
 ```bash
 pip install kairos-ai[cli]
 
-# Generate some run logs first
-kairos run my_workflow.py --log-format jsonl --log-file ./logs
+# Generate run data with verbose logging (captures step input/output for the inspector):
+python examples/dashboard_demo.py --verbose
 
-# Launch the dashboard
-kairos dashboard --log-dir ./logs --open
+# Launch the dashboard:
+kairos dashboard --log-dir dashboard_logs --open
 ```
 
-The dashboard serves a single-page web UI on `127.0.0.1:8420` with a token-authenticated API. Browse all past runs in a filterable table (status, workflow name, text search), click into any run to see a step-grouped timeline with collapsible sections, and expand event rows to inspect full JSON data with syntax coloring. Auto-refresh keeps the view current while you iterate. Zero new dependencies — built on Python's stdlib `http.server`.
+The dashboard serves a single-page web UI on `127.0.0.1:8420` with a token-authenticated API. Zero new dependencies — built on Python's stdlib `http.server`.
+
+**What you get:**
+- **Step dependency graph** — interactive SVG DAG with color-coded nodes by status, click-to-scroll navigation, foreach badges
+- **Step inspector** — click "Inspect" on any step to see Input/Output/Validation data in a tabbed panel
+- **Export** — download run data as JSON or CSV, copy the API URL for scripting
+- **Run comparison** — select two runs and compare side-by-side with highlighted differences (status changes, duration deltas, step presence/absence)
+- **Filters** — filter runs by status, workflow name, or text search
+- **Auto-refresh** — live polling with configurable interval (2s/5s/10s/30s)
+- **Expandable events** — click any event to see full JSON data with syntax coloring
+- **Step groups** — collapsible sections per step, failed steps auto-expanded
 
 **Security (S17):** Binds to `127.0.0.1` only (never `0.0.0.0`), random token auth via `hmac.compare_digest()`, CSP headers on every response, strictly read-only (`GET` only), reads pre-redacted log files.
 
@@ -364,7 +374,7 @@ python examples/scoped_state.py
 | **Observability** | Run Logger | Structured event logging with pluggable sinks and verbosity levels |
 | | CLI Runner | `kairos run`, `kairos validate`, `kairos version` with S13 module import security |
 | | CLI Inspect | `kairos inspect` — view past runs from `.jsonl` logs with colored output and filtering |
-| | Dashboard | `kairos dashboard` — localhost web UI for run history with token auth (S17) |
+| | Dashboard | `kairos dashboard` — localhost web UI with dependency graph, step inspector, export, run diff, token auth (S17) |
 
 ---
 
@@ -401,7 +411,7 @@ python examples/scoped_state.py
 | Dashboard (`kairos dashboard` — localhost web UI) | Done |
 | Plugin System | Planned |
 
-1,499 tests passing, 98% coverage across 20 source files.
+1,626 tests passing, 99% coverage across 20 source files.
 
 ---
 
@@ -428,7 +438,7 @@ pip install -e ".[dev]"
 | `examples/run_logger.py` | **Run Logger** — all 4 sinks, verbosity levels, sensitive key redaction, RunLog inspection (no API keys needed) |
 | `examples/real_claude_logged.py` | **Run Logger + Claude** — concurrent Claude API calls with live lifecycle logging and RunLog inspection |
 | `examples/cli_workflow.py` | **CLI Runner** — designed for `kairos run`/`kairos validate`, no `__main__` block needed (no API keys needed) |
-| `examples/dashboard_demo.py` | **Dashboard** — generates 3 logged runs (2 success, 1 failure), then instructions to launch `kairos dashboard` (no API keys needed) |
+| `examples/dashboard_demo.py` | **Dashboard** — generates 3 logged runs (2 success, 1 failure), then instructions to launch `kairos dashboard`. Use `--verbose` for full inspector data (no API keys needed) |
 
 ---
 

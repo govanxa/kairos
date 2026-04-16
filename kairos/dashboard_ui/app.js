@@ -18,6 +18,9 @@
   let filters = { status: 'all', workflow: 'all', search: '' };
   let expandedEvents = new Set();   // tracks expanded event row indices
   let expandCounter = 0;            // monotonic counter for unique expand IDs
+  let openInspectorStepId = null;   // currently open inspector step_id, or null
+  let currentRunEvents = [];        // events for currently viewed run detail
+  let selectedRuns = [];            // run_id strings selected for diff (max 2)
 
   // ============================================================
   // === Constants ===
@@ -126,6 +129,477 @@
       '<line x1="16" y1="40" x2="32" y2="52"/>' +
       '<line x1="48" y1="40" x2="32" y2="52"/>' +
       '</svg>';
+  }
+
+  /** Inspect icon — magnifying glass, used on step group inspect button. */
+  function iconInspect() {
+    return '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5">' +
+      '<circle cx="7" cy="7" r="4"/>' +
+      '<path d="M10 10l4 4"/>' +
+      '</svg>';
+  }
+
+  /** Download icon — used on export JSON/CSV buttons. */
+  function iconDownload() {
+    return '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 2v8m0 0l-3-3m3 3l3-3M3 13h10"/></svg>';
+  }
+
+  /** Copy icon — used on copy API URL button. */
+  function iconCopy() {
+    return '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="5" y="5" width="8" height="8" rx="1.5"/><path d="M3 11V3h8"/></svg>';
+  }
+
+  // ============================================================
+  // === SVG Helpers (Enhancement 5) ===
+  // ============================================================
+
+  const SVG_NS = 'http://www.w3.org/2000/svg';
+
+  /** Create an SVG element with given attributes and optional children. */
+  function svgEl(tag, attrs, children) {
+    const el = document.createElementNS(SVG_NS, tag);
+    if (attrs) {
+      Object.keys(attrs).forEach(function (k) {
+        el.setAttribute(k, attrs[k]);
+      });
+    }
+    if (children) {
+      children.forEach(function (c) { if (c) el.appendChild(c); });
+    }
+    return el;
+  }
+
+  /** Create a rounded SVG rect. */
+  function svgRect(x, y, w, h, rx, fill, stroke, strokeWidth) {
+    return svgEl('rect', {
+      x: x, y: y, width: w, height: h, rx: rx,
+      fill: fill || 'none',
+      stroke: stroke || 'none',
+      'stroke-width': strokeWidth || 1,
+    });
+  }
+
+  /** Create an SVG text element. */
+  function svgText(x, y, text, opts) {
+    opts = opts || {};
+    var tokens = getCssTokens();
+    const el = svgEl('text', {
+      x: x, y: y,
+      'text-anchor': opts.anchor || 'middle',
+      'dominant-baseline': opts.baseline || 'auto',
+      'font-size': opts.fontSize || 12,
+      'font-family': opts.fontFamily || tokens.fontMono,
+      'font-weight': opts.fontWeight || 'normal',
+      fill: opts.fill || tokens.textPrimary,
+    });
+    el.textContent = text;
+    return el;
+  }
+
+  /** Create an SVG line. */
+  function svgLine(x1, y1, x2, y2, stroke, dash) {
+    var tokens = getCssTokens();
+    var attrs = { x1: x1, y1: y1, x2: x2, y2: y2, stroke: stroke || tokens.edge, 'stroke-width': 2 };
+    if (dash) attrs['stroke-dasharray'] = dash;
+    return svgEl('line', attrs);
+  }
+
+  /** Create an SVG path element (used for bezier edges). */
+  function svgPath(d, stroke, fill) {
+    var tokens = getCssTokens();
+    return svgEl('path', {
+      d: d,
+      stroke: stroke || tokens.edge,
+      fill: fill || 'none',
+      'stroke-width': 2,
+      'stroke-linecap': 'round',
+    });
+  }
+
+  /** Create an SVG <marker> element for arrowheads. */
+  function svgArrowMarker(id, color) {
+    var tokens = getCssTokens();
+    var marker = svgEl('marker', {
+      id: id,
+      markerWidth: 8,
+      markerHeight: 6,
+      refX: 7,
+      refY: 3,
+      orient: 'auto',
+    });
+    var arrow = svgEl('polygon', {
+      points: '0 0, 8 3, 0 6',
+      fill: color || tokens.edge,
+    });
+    marker.appendChild(arrow);
+    return marker;
+  }
+
+  /** Create an SVG <g> group, optionally with a transform. */
+  function svgGroup(children, transform) {
+    var attrs = {};
+    if (transform) attrs.transform = transform;
+    return svgEl('g', attrs, children || []);
+  }
+
+  // --- Graph layout constants ---
+  var NODE_W = 160;
+  var NODE_H = 56;
+  var NODE_RX = 8;
+  var LAYER_SPACING_Y = 136;
+  var NODE_GAP_X = 40;
+  var NODE_PAD_TOP = 40;
+
+  // Cache CSS token values once at use time (DOM may not exist at parse time)
+  var _cssTokenCache = null;
+
+  function getCssTokens() {
+    if (_cssTokenCache) return _cssTokenCache;
+    var style = getComputedStyle(document.documentElement);
+    function t(name) { return style.getPropertyValue(name).trim(); }
+    _cssTokenCache = {
+      nodeBg:       t('--graph-node-bg')        || '#1e293b',
+      edge:         t('--graph-edge')            || '#475569',
+      success:      t('--color-success')         || '#22c55e',
+      error:        t('--color-error')           || '#ef4444',
+      skipped:      t('--color-skipped')         || '#64748b',
+      running:      t('--color-running')         || '#818cf8',
+      bg600:        t('--bg-600')                || '#475569',
+      textPrimary:  t('--text-primary')          || '#f8fafc',
+      textMuted:    t('--text-muted')            || '#94a3b8',
+      successText:  t('--color-success-text')    || '#86efac',
+      errorText:    t('--color-error-text')      || '#fca5a5',
+      skippedText:  t('--color-skipped-text')    || '#94a3b8',
+      runningText:  t('--color-running-text')    || '#a5b4fc',
+      fontMono:     t('--font-mono')             || 'monospace',
+    };
+    return _cssTokenCache;
+  }
+
+  function nodeStrokeColor(status, tokens) {
+    if (status === 'complete' || status === 'completed') return tokens.success;
+    if (status === 'failed')  return tokens.error;
+    if (status === 'skipped') return tokens.skipped;
+    if (status === 'running') return tokens.running;
+    return tokens.bg600;
+  }
+
+  function nodeTextColor(status, tokens) {
+    if (status === 'complete' || status === 'completed') return tokens.successText;
+    if (status === 'failed')  return tokens.errorText;
+    if (status === 'skipped') return tokens.skippedText;
+    if (status === 'running') return tokens.runningText;
+    return tokens.textMuted;
+  }
+
+  function nodeStatusIcon(status) {
+    if (status === 'complete' || status === 'completed') return '\u2713';
+    if (status === 'failed')  return '\u2717';
+    if (status === 'skipped') return '\u2212';
+    if (status === 'running') return '\u25b6';
+    return '\u2022';
+  }
+
+  /**
+   * Extract dependency data from run events.
+   * Returns { steps: [{id, status, durationMs, dependencies, foreachCount}], edges: [{from,to}] }
+   */
+  function extractDependencyData(events) {
+    var stepMap = {};
+    var stepOrder = [];
+
+    // Pass 1: find workflow_start for plan data
+    for (var i = 0; i < events.length; i++) {
+      var ev = events[i];
+      if (ev.event_type === 'workflow_start' && ev.data && ev.data.plan) {
+        var plan = ev.data.plan;
+        var planSteps = plan.steps || [];
+        for (var j = 0; j < planSteps.length; j++) {
+          var ps = planSteps[j];
+          var sid = ps.id || ps.step_id || ps.name || String(j);
+          if (!stepMap[sid]) {
+            stepMap[sid] = { id: sid, status: 'pending', durationMs: 0, dependencies: ps.depends_on || [], foreachCount: 0 };
+            stepOrder.push(sid);
+          }
+        }
+        break;
+      }
+    }
+
+    // Pass 2: collect step events
+    for (var i = 0; i < events.length; i++) {
+      var ev = events[i];
+      var sid = ev.step_id;
+      if (!sid) continue;
+
+      if (!stepMap[sid]) {
+        var deps = (ev.data && ev.data.dependencies) ? ev.data.dependencies : [];
+        stepMap[sid] = { id: sid, status: 'pending', durationMs: 0, dependencies: deps, foreachCount: 0 };
+        stepOrder.push(sid);
+      }
+
+      var s = stepMap[sid];
+      if (ev.event_type === 'step_complete' || ev.event_type === 'step_finish') {
+        s.status = 'complete';
+        if (ev.data && ev.data.duration_ms) s.durationMs = ev.data.duration_ms;
+      } else if (ev.event_type === 'step_fail' || ev.event_type === 'step_error') {
+        s.status = 'failed';
+        if (ev.data && ev.data.duration_ms) s.durationMs = ev.data.duration_ms;
+      } else if (ev.event_type === 'step_skip' || ev.event_type === 'step_skipped') {
+        s.status = 'skipped';
+      } else if (ev.event_type === 'step_start') {
+        if (s.status === 'pending') s.status = 'running';
+        if (ev.data && ev.data.dependencies && s.dependencies.length === 0) {
+          s.dependencies = ev.data.dependencies;
+        }
+      }
+    }
+
+    var steps = stepOrder.map(function (sid) { return stepMap[sid]; });
+
+    // Build edges
+    var edges = [];
+    steps.forEach(function (step) {
+      (step.dependencies || []).forEach(function (dep) {
+        if (stepMap[dep]) {
+          edges.push({ from: dep, to: step.id });
+        }
+      });
+    });
+
+    return { steps: steps, edges: edges };
+  }
+
+  /**
+   * Compute node positions using a simple layered (Sugiyama-lite) layout.
+   * Returns { nodes: [{id, x, y, ...step}], width, height }
+   */
+  function computeGraphLayout(steps, edges) {
+    if (!steps || steps.length === 0) return { nodes: [], width: 0, height: 0 };
+
+    // Build adjacency: stepId -> [depends-on step IDs]
+    var depMap = {};
+    steps.forEach(function (s) { depMap[s.id] = s.dependencies || []; });
+
+    // Assign layers by longest path from any root
+    var layers = {};
+    steps.forEach(function (s) { layers[s.id] = 0; });
+
+    var changed = true;
+    var maxIter = steps.length + 1;
+    while (changed && maxIter-- > 0) {
+      changed = false;
+      steps.forEach(function (s) {
+        (depMap[s.id] || []).forEach(function (dep) {
+          if (layers[dep] !== undefined) {
+            var needed = layers[dep] + 1;
+            if (needed > layers[s.id]) {
+              layers[s.id] = needed;
+              changed = true;
+            }
+          }
+        });
+      });
+    }
+    if (maxIter <= 0) {
+      console.warn('Kairos: graph layout iteration limit reached — possible circular dependencies');
+    }
+
+    // Group steps by layer
+    var layerGroups = {};
+    steps.forEach(function (s) {
+      var lyr = layers[s.id] || 0;
+      if (!layerGroups[lyr]) layerGroups[lyr] = [];
+      layerGroups[lyr].push(s);
+    });
+
+    var maxLayer = 0;
+    Object.keys(layerGroups).forEach(function (l) {
+      if (Number(l) > maxLayer) maxLayer = Number(l);
+    });
+
+    // Calculate total width needed
+    var maxNodesInLayer = 1;
+    Object.keys(layerGroups).forEach(function (l) {
+      if (layerGroups[l].length > maxNodesInLayer) maxNodesInLayer = layerGroups[l].length;
+    });
+    var graphWidth = maxNodesInLayer * NODE_W + (maxNodesInLayer - 1) * NODE_GAP_X;
+
+    // Position nodes
+    var nodes = [];
+    Object.keys(layerGroups).forEach(function (l) {
+      var lyr = Number(l);
+      var group = layerGroups[l];
+      var rowWidth = group.length * NODE_W + (group.length - 1) * NODE_GAP_X;
+      var startX = (graphWidth - rowWidth) / 2;
+      group.forEach(function (s, idx) {
+        var nx = startX + idx * (NODE_W + NODE_GAP_X);
+        var ny = NODE_PAD_TOP + lyr * LAYER_SPACING_Y;
+        nodes.push(Object.assign({}, s, { x: nx, y: ny }));
+      });
+    });
+
+    var totalHeight = NODE_PAD_TOP + maxLayer * LAYER_SPACING_Y + NODE_H + NODE_PAD_TOP;
+    return { nodes: nodes, width: graphWidth, height: totalHeight };
+  }
+
+  /**
+   * Render the graph container placeholder (HTML string).
+   * The actual SVG is mounted by mountDependencyGraph() after innerHTML is set.
+   */
+  function renderGraphPlaceholder() {
+    return '<div class="graph-container" id="dep-graph" role="img" aria-label="Step dependency graph"></div>';
+  }
+
+  /**
+   * Build and append the SVG dependency graph into #dep-graph.
+   * Must be called AFTER the container is added to the DOM (after innerHTML is set).
+   */
+  function mountDependencyGraph(events) {
+    var container = document.getElementById('dep-graph');
+    if (!container) return;
+
+    var data = extractDependencyData(events);
+    if (!data.steps || data.steps.length === 0) {
+      container.innerHTML = '<div class="graph-empty">No step data available</div>';
+      return;
+    }
+
+    var layout = computeGraphLayout(data.steps, data.edges);
+    var tokens = getCssTokens();
+    var containerWidth = container.clientWidth || 600;
+    var svgWidth = Math.max(containerWidth - 32, layout.width + 80);
+    var svgHeight = layout.height;
+    var xOffset = (svgWidth - layout.width) / 2;
+
+    // Build node position lookup for edge routing
+    var nodePos = {};
+    layout.nodes.forEach(function (n) {
+      nodePos[n.id] = { x: n.x + xOffset, y: n.y };
+    });
+
+    // Create SVG root
+    var svg = svgEl('svg', {
+      width: svgWidth,
+      height: svgHeight,
+      viewBox: '0 0 ' + svgWidth + ' ' + svgHeight,
+    });
+
+    // <defs> for arrowhead marker
+    var defs = svgEl('defs');
+    defs.appendChild(svgArrowMarker('arrow-default', tokens.edge));
+    svg.appendChild(defs);
+
+    // Draw edges first (behind nodes)
+    data.edges.forEach(function (edge) {
+      var fromPos = nodePos[edge.from];
+      var toPos = nodePos[edge.to];
+      if (!fromPos || !toPos) return;
+
+      var fromX = fromPos.x + NODE_W / 2;
+      var fromY = fromPos.y + NODE_H;
+      var toX = toPos.x + NODE_W / 2;
+      var toY = toPos.y;
+      var midY = (fromY + toY) / 2;
+
+      // Cubic bezier: M fromX,fromY C fromX,midY toX,midY toX,toY
+      var d = 'M ' + fromX + ' ' + fromY + ' C ' + fromX + ' ' + midY + ' ' + toX + ' ' + midY + ' ' + toX + ' ' + toY;
+      var pathEl = svgPath(d, tokens.edge, 'none');
+      pathEl.setAttribute('marker-end', 'url(#arrow-default)');
+      svg.appendChild(pathEl);
+    });
+
+    // Draw nodes
+    layout.nodes.forEach(function (node) {
+      var nx = node.x + xOffset;
+      var ny = node.y;
+      var stroke = nodeStrokeColor(node.status, tokens);
+      var textColor = nodeTextColor(node.status, tokens);
+
+      // <g> group for the node — carries data-step-id for event delegation
+      var g = svgEl('g', { class: 'graph-node', 'data-step-id': node.id, tabindex: '0', role: 'button', 'aria-label': node.id });
+
+      // Background rect
+      g.appendChild(svgRect(nx, ny, NODE_W, NODE_H, NODE_RX, tokens.nodeBg, stroke, 2));
+
+      // Step name (line 1) — truncate if needed
+      var nameText = node.id.length > 18 ? node.id.slice(0, 17) + '\u2026' : node.id;
+      g.appendChild(svgText(nx + NODE_W / 2, ny + 20, nameText, {
+        anchor: 'middle',
+        baseline: 'middle',
+        fontSize: 12,
+        fontFamily: tokens.fontMono,
+        fontWeight: 'bold',
+        fill: tokens.textPrimary,
+      }));
+
+      // Status + duration (line 2)
+      var icon = nodeStatusIcon(node.status);
+      var durStr = node.durationMs ? fmtDuration(node.durationMs) : node.status;
+      var line2 = icon + '  ' + durStr;
+      g.appendChild(svgText(nx + NODE_W / 2, ny + 38, line2, {
+        anchor: 'middle',
+        baseline: 'middle',
+        fontSize: 11,
+        fontFamily: tokens.fontMono,
+        fontWeight: 'normal',
+        fill: textColor,
+      }));
+
+      // Foreach badge (top-right)
+      if (node.foreachCount && node.foreachCount > 0) {
+        var badgeX = nx + NODE_W - 24;
+        var badgeY = ny - 8;
+        g.appendChild(svgRect(badgeX, badgeY, 22, 14, 7, tokens.bg600, 'none', 0));
+        g.appendChild(svgText(badgeX + 11, badgeY + 7, '\u00d7' + node.foreachCount, {
+          anchor: 'middle',
+          baseline: 'middle',
+          fontSize: 10,
+          fontFamily: tokens.fontMono,
+          fill: tokens.textMuted,
+        }));
+      }
+
+      svg.appendChild(g);
+    });
+
+    container.appendChild(svg);
+
+    // Hover highlight: brighten stroke on mousemove/mouseleave (avoids child-element flicker from bubbling events)
+    svg.addEventListener('mousemove', function (e) {
+      var node = e.target.closest('.graph-node');
+      svg.querySelectorAll('.graph-node.graph-node-hover').forEach(function (el) {
+        if (el !== node) el.classList.remove('graph-node-hover');
+      });
+      if (node) node.classList.add('graph-node-hover');
+    });
+    svg.addEventListener('mouseleave', function () {
+      svg.querySelectorAll('.graph-node.graph-node-hover').forEach(function (el) {
+        el.classList.remove('graph-node-hover');
+      });
+    });
+  }
+
+  /**
+   * Scroll to the step group with the given step ID in the timeline,
+   * expand it if collapsed, and briefly highlight the header.
+   */
+  function scrollToStepGroup(stepId) {
+    var header = document.querySelector('.step-group-header[data-step-id="' + CSS.escape(stepId) + '"]');
+    if (header) {
+      header.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      // Expand the group if collapsed
+      var group = header.closest('.step-group');
+      if (group) {
+        var eventsEl = group.querySelector('.step-group-events');
+        if (eventsEl && eventsEl.style.display === 'none') {
+          header.click();
+        }
+      }
+      // Brief highlight
+      header.classList.add('graph-highlight');
+      setTimeout(function () { header.classList.remove('graph-highlight'); }, 1500);
+    }
   }
 
   // ============================================================
@@ -262,6 +736,7 @@
       badgesHtml +
       '<span class="filter-count">Showing ' + filtered.length + ' of ' + allRuns.length + ' runs</span>' +
       (isFiltered ? '<button class="filter-clear" id="filter-clear">Clear all</button>' : '') +
+      '<button class="compare-btn" id="compare-btn" style="display:' + (selectedRuns.length === 2 ? '' : 'none') + '">Compare 2 runs</button>' +
       '</div>';
 
     if (filtered.length === 0) {
@@ -280,8 +755,10 @@
 
     let rows = '';
     for (const run of filtered) {
+      const isChecked = selectedRuns.indexOf(run.run_id) !== -1;
       rows +=
         '<tr class="clickable" data-run-id="' + esc(run.run_id) + '" tabindex="0" role="button">' +
+        '<td class="td-checkbox"><input type="checkbox" class="run-checkbox" data-run-id="' + esc(run.run_id) + '" aria-label="Select run ' + esc((run.run_id || '').slice(0, 8)) + ' for comparison"' + (isChecked ? ' checked' : '') + '></td>' +
         '<td><span class="mono">' + esc((run.run_id || '').slice(0, 8)) + '</span></td>' +
         '<td>' + esc(run.workflow_name || '\u2014') + '</td>' +
         '<td>' + statusBadge(run.status || 'unknown') + '</td>' +
@@ -297,6 +774,7 @@
       filterBar +
       '<table>' +
       '<thead><tr>' +
+      '<th class="th-checkbox"></th>' +
       '<th>Run ID</th><th>Workflow</th><th>Status</th>' +
       '<th>Steps</th><th>Duration</th><th>Started</th>' +
       '</tr></thead>' +
@@ -394,6 +872,7 @@
           statusBadge(status) +
           (duration ? '<span class="group-duration">' + esc(duration) + '</span>' : '') +
           '<span class="group-count">(' + group.events.length + ' events)</span>' +
+          '<button class="inspect-btn" data-inspect-step="' + esc(stepId) + '" aria-label="Inspect step ' + esc(stepId) + '">' + iconInspect() + ' Inspect</button>' +
           '</div>' +
           '<ul class="' + eventsClass + '">';
         for (const evt of group.events) {
@@ -446,6 +925,139 @@
   }
 
   // ============================================================
+  // === Inspector Panel (Enhancement 8) ===
+  // ============================================================
+
+  /**
+   * Render the inspector panel for a given step.
+   * Finds step_start (inputs), step_complete (output), and validation events.
+   * @param {string} stepId
+   * @param {Array} events — full event list for the current run
+   * @returns {string} HTML for the inspector panel
+   */
+  function renderInspectorPanel(stepId, events) {
+    const stepEvents = events.filter(function (e) { return e.step_id === stepId; });
+
+    const startEvt = stepEvents.find(function (e) { return e.event_type === 'step_start'; });
+    const completeEvt = stepEvents.find(function (e) { return e.event_type === 'step_complete'; });
+    const validationEvts = stepEvents.filter(function (e) {
+      return e.event_type === 'validation_pass' || e.event_type === 'validation_fail';
+    });
+
+    var verbosityMsg =
+      '<div class="inspector-empty">Step data not captured at this verbosity level.' +
+      ' Re-run with <code>--verbose</code> to include full step input/output.</div>';
+
+    // Input tab content — the logger does not capture step inputs,
+    // so we show the step_start event data as context instead.
+    var inputData = startEvt && startEvt.data;
+    var inputHtml = inputData
+      ? '<pre>' + colorizeJson(inputData, 0, 0) + '</pre>'
+      : '<div class="inspector-empty">No input data recorded for this step.</div>';
+
+    // Output tab content — requires VERBOSE verbosity
+    var outputData = completeEvt && completeEvt.data && completeEvt.data.output;
+    var outputHtml = outputData !== undefined && outputData !== null
+      ? '<pre>' + colorizeJson(outputData, 0, 0) + '</pre>'
+      : (completeEvt
+        ? verbosityMsg
+        : '<div class="inspector-empty">Step did not complete.</div>');
+
+    // Validation tab content — distinguish "no contract" from "not captured"
+    var validationHtml;
+    if (validationEvts.length > 0) {
+      validationHtml = '<pre>' + colorizeJson(
+        validationEvts.map(function (e) { return e.data || {}; }),
+        0, 0
+      ) + '</pre>';
+    } else {
+      // Check if the step has validation events at all — if not, it may
+      // simply have no output contract configured.
+      var hasContract = events.some(function (e) {
+        return (e.event_type === 'validation_start' || e.event_type === 'validation_complete' ||
+                e.event_type === 'validation_pass' || e.event_type === 'validation_fail') &&
+               e.step_id === stepId;
+      });
+      validationHtml = hasContract
+        ? verbosityMsg
+        : '<div class="inspector-empty">No validation contract configured for this step.</div>';
+    }
+
+    return (
+      '<div class="inspector-panel" data-inspector-step="' + esc(stepId) + '">' +
+      '<div class="inspector-header">' +
+      '<div class="inspector-tabs">' +
+      '<button class="inspector-tab active" data-tab="input">Input</button>' +
+      '<button class="inspector-tab" data-tab="output">Output</button>' +
+      '<button class="inspector-tab" data-tab="validation">Validation</button>' +
+      '</div>' +
+      '<button class="inspector-close" aria-label="Close inspector">\u00d7</button>' +
+      '</div>' +
+      '<div class="inspector-body">' +
+      '<div class="inspector-tab-content active" data-tab-content="input">' + inputHtml + '</div>' +
+      '<div class="inspector-tab-content" data-tab-content="output">' + outputHtml + '</div>' +
+      '<div class="inspector-tab-content" data-tab-content="validation">' + validationHtml + '</div>' +
+      '</div>' +
+      '</div>'
+    );
+  }
+
+  /**
+   * Toggle the inspector panel for a step group.
+   * If the same step is already open, close it. Otherwise open a new one.
+   * @param {string} stepId
+   */
+  function toggleInspector(stepId) {
+    if (openInspectorStepId === stepId) {
+      closeInspector();
+      return;
+    }
+    closeInspector();
+    openInspectorStepId = stepId;
+
+    // Find the step-group element for this stepId and insert the panel after it
+    const header = document.querySelector('.step-group-header[data-step-id="' + CSS.escape(stepId) + '"]');
+    if (!header) return;
+    const group = header.closest('.step-group');
+    if (!group) return;
+
+    const panelHtml = renderInspectorPanel(stepId, currentRunEvents);
+    group.insertAdjacentHTML('beforeend', panelHtml);
+  }
+
+  /**
+   * Close any currently open inspector panel.
+   */
+  function closeInspector() {
+    const existing = document.querySelector('.inspector-panel');
+    if (existing) existing.remove();
+    openInspectorStepId = null;
+  }
+
+  /**
+   * Switch the active tab inside the inspector panel.
+   * @param {Element} tabEl — the clicked .inspector-tab button
+   */
+  function switchInspectorTab(tabEl) {
+    const panel = tabEl.closest('.inspector-panel');
+    if (!panel) return;
+    const tabName = tabEl.dataset.tab;
+
+    // Deactivate all tabs and contents
+    panel.querySelectorAll('.inspector-tab').forEach(function (t) {
+      t.classList.remove('active');
+    });
+    panel.querySelectorAll('.inspector-tab-content').forEach(function (c) {
+      c.classList.remove('active');
+    });
+
+    // Activate selected tab and content
+    tabEl.classList.add('active');
+    const content = panel.querySelector('[data-tab-content="' + tabName + '"]');
+    if (content) content.classList.add('active');
+  }
+
+  // ============================================================
   // === Views ===
   // ============================================================
 
@@ -493,6 +1105,7 @@
       .then(function (data) {
         const summary = data.summary || {};
         const events = data.events || [];
+        currentRunEvents = events;
 
         const summaryHtml =
           '<div class="panel panel-detail">' +
@@ -522,15 +1135,27 @@
           '<span class="detail-sep">\u00b7</span>' +
           '<span class="detail-run-id">' + esc(shortId) + '</span>' +
           '</span>' +
+          '<div class="export-actions">' +
+          '<button class="btn-export" id="export-json" aria-label="Download JSON">' + iconDownload() + ' JSON</button>' +
+          '<button class="btn-export" id="export-csv" aria-label="Download CSV">' + iconDownload() + ' CSV</button>' +
+          '<button class="btn-export" id="copy-api-url" aria-label="Copy API URL">' + iconCopy() + ' Copy URL</button>' +
+          '</div>' +
           '</div>';
 
         app.innerHTML =
           navBar +
           summaryHtml +
           '<div class="panel">' +
+          '<div class="panel-header">Step Dependency Graph</div>' +
+          renderGraphPlaceholder() +
+          '</div>' +
+          '<div class="panel">' +
           '<div class="panel-header">Events (' + events.length + ')</div>' +
           eventsHtml +
           '</div>';
+
+        // Mount SVG graph AFTER innerHTML is set (two-phase rendering)
+        mountDependencyGraph(events);
 
         document.getElementById('back-btn').addEventListener('click', function () {
           navigate('run-list', {});
@@ -598,8 +1223,10 @@
     if (tbody) {
       let rows = '';
       for (const run of filtered) {
+        const isChecked = selectedRuns.indexOf(run.run_id) !== -1;
         rows +=
           '<tr class="clickable" data-run-id="' + esc(run.run_id) + '" tabindex="0" role="button">' +
+          '<td class="td-checkbox"><input type="checkbox" class="run-checkbox" data-run-id="' + esc(run.run_id) + '" aria-label="Select run ' + esc((run.run_id || '').slice(0, 8)) + ' for comparison"' + (isChecked ? ' checked' : '') + '></td>' +
           '<td><span class="mono">' + esc((run.run_id || '').slice(0, 8)) + '</span></td>' +
           '<td>' + esc(run.workflow_name || '\u2014') + '</td>' +
           '<td>' + statusBadge(run.status || 'unknown') + '</td>' +
@@ -740,9 +1367,13 @@
 
   function navigate(view, params) {
     if (view === 'run-list') {
+      selectedRuns = [];
       loadRuns();
     } else if (view === 'run-detail' && params.runId) {
+      selectedRuns = [];
       showRunDetail(params.runId);
+    } else if (view === 'diff' && params.idA && params.idB) {
+      showDiffView(params.idA, params.idB);
     }
   }
 
@@ -751,10 +1382,103 @@
   // ============================================================
 
   /**
+   * Fetch a URL and trigger a file download via a Blob object URL.
+   * Does not navigate away from the page if the request fails.
+   *
+   * @param {string} url - The URL to fetch (already includes auth token).
+   */
+  function downloadFile(url) {
+    fetch(url).then(function (resp) {
+      if (!resp.ok) return;
+      var cd = resp.headers.get('Content-Disposition') || '';
+      var match = cd.match(/filename="?([^"]+)"?/);
+      var filename = match ? match[1] : 'download';
+      return resp.blob().then(function (blob) {
+        var a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        setTimeout(function () {
+          document.body.removeChild(a);
+          URL.revokeObjectURL(a.href);
+        }, 100);
+      });
+    });
+  }
+
+  /**
    * Single delegated click handler on #app.
    * Handles: expandable event rows, step group headers, run table rows.
    */
   function handleAppInteraction(e) {
+    // Download JSON export
+    if (e.target.closest('#export-json')) {
+      if (!currentRunId) return;
+      downloadFile(apiUrl('/api/runs/' + currentRunId + '/export/json'));
+      return;
+    }
+    // Download CSV export
+    if (e.target.closest('#export-csv')) {
+      if (!currentRunId) return;
+      downloadFile(apiUrl('/api/runs/' + currentRunId + '/export/csv'));
+      return;
+    }
+    // Copy API URL to clipboard
+    if (e.target.closest('#copy-api-url')) {
+      if (!currentRunId) return;
+      var url = window.location.origin + apiUrl('/api/runs/' + currentRunId);
+      var btn = document.getElementById('copy-api-url');
+      var orig = btn ? btn.innerHTML : '';
+      navigator.clipboard.writeText(url).then(function () {
+        if (btn) {
+          btn.classList.add('btn-export-copied');
+          btn.innerHTML = iconCopy() + ' Copied!';
+          setTimeout(function () {
+            btn.classList.remove('btn-export-copied');
+            btn.innerHTML = orig;
+          }, 2000);
+        }
+      }).catch(function () {
+        if (btn) {
+          btn.textContent = 'Failed';
+          setTimeout(function () { btn.innerHTML = orig; }, 2000);
+        }
+      });
+      return;
+    }
+
+    // Graph node click — scroll to step group
+    const graphNode = e.target.closest('g[data-step-id]');
+    if (graphNode && graphNode.closest('.graph-container')) {
+      const stepId = graphNode.dataset.stepId;
+      if (stepId) scrollToStepGroup(stepId);
+      return;
+    }
+
+    // Inspector tab switch
+    const inspectorTab = e.target.closest('.inspector-tab');
+    if (inspectorTab) {
+      switchInspectorTab(inspectorTab);
+      return;
+    }
+
+    // Inspector close button
+    const inspectorClose = e.target.closest('.inspector-close');
+    if (inspectorClose) {
+      closeInspector();
+      return;
+    }
+
+    // Inspect button on step group header
+    const inspectBtn = e.target.closest('.inspect-btn');
+    if (inspectBtn) {
+      e.stopPropagation();
+      const stepId = inspectBtn.dataset.inspectStep;
+      if (stepId) toggleInspector(stepId);
+      return;
+    }
+
     // Expandable event row
     const eventRow = e.target.closest('.event-row');
     if (eventRow) {
@@ -784,6 +1508,20 @@
       if (which === 'workflow') { filters.workflow = 'all'; var w = document.getElementById('filter-workflow'); if (w) w.value = 'all'; }
       if (which === 'search') { filters.search = ''; var i = document.getElementById('filter-search'); if (i) i.value = ''; }
       refreshRunListView();
+      return;
+    }
+
+    // Checkbox for run diff selection — must come before run row handler
+    var checkbox = e.target.closest('.run-checkbox');
+    if (checkbox) {
+      e.stopPropagation();
+      handleRunCheckbox(checkbox);
+      return;
+    }
+
+    // Compare button
+    if (e.target.id === 'compare-btn' || e.target.closest('#compare-btn')) {
+      navigate('diff', { idA: selectedRuns[0], idB: selectedRuns[1] });
       return;
     }
 
@@ -845,6 +1583,198 @@
       eventsList.classList.add('visible');
       if (chevron) chevron.classList.add('expanded');
     }
+  }
+
+  // ============================================================
+  // === Enhancement 7 — Diff Two Runs ===
+  // ============================================================
+
+  function handleRunCheckbox(checkbox) {
+    var runId = checkbox.dataset.runId;
+    if (!runId) return;
+    if (checkbox.checked) {
+      if (selectedRuns.length >= 2) {
+        checkbox.checked = false;
+        return; // max 2 selections
+      }
+      selectedRuns.push(runId);
+    } else {
+      selectedRuns = selectedRuns.filter(function (id) { return id !== runId; });
+    }
+    updateCompareButton();
+  }
+
+  function updateCompareButton() {
+    var btn = document.getElementById('compare-btn');
+    if (!btn) return;
+    btn.style.display = selectedRuns.length === 2 ? '' : 'none';
+  }
+
+  /**
+   * Extract a list of step summaries from a run's event array.
+   * @param {Array} events
+   * @returns {Array<{id: string, status: string, durationMs: number}>}
+   */
+  function extractStepList(events) {
+    var stepMap = {};
+    events.forEach(function (ev) {
+      if (ev.event_type === 'step_start' && ev.step_id) {
+        stepMap[ev.step_id] = { id: ev.step_id, status: 'running', durationMs: 0 };
+      }
+      if (ev.event_type === 'step_complete' && ev.step_id && stepMap[ev.step_id]) {
+        stepMap[ev.step_id].status = 'complete';
+        stepMap[ev.step_id].durationMs = (ev.data && ev.data.duration_ms) || 0;
+      }
+      if (ev.event_type === 'step_fail' && ev.step_id && stepMap[ev.step_id]) {
+        stepMap[ev.step_id].status = 'failed';
+        stepMap[ev.step_id].durationMs = (ev.data && ev.data.duration_ms) || 0;
+      }
+      if (ev.event_type === 'step_skip' && ev.step_id) {
+        stepMap[ev.step_id] = { id: ev.step_id, status: 'skipped', durationMs: 0 };
+      }
+    });
+    return Object.values(stepMap);
+  }
+
+  /**
+   * Render the diff view comparing two run detail objects.
+   * @param {Object} runA
+   * @param {Object} runB
+   * @returns {string} HTML
+   */
+  function renderDiffView(runA, runB) {
+    var summaryA = runA.summary || {};
+    var summaryB = runB.summary || {};
+    var stepsA = extractStepList(runA.events || []);
+    var stepsB = extractStepList(runB.events || []);
+
+    // Build step maps for O(1) lookup
+    var stepMapA = {};
+    stepsA.forEach(function (s) { stepMapA[s.id] = s; });
+    var stepMapB = {};
+    stepsB.forEach(function (s) { stepMapB[s.id] = s; });
+
+    // Union of all step IDs
+    var allStepIds = [];
+    var seen = {};
+    stepsA.forEach(function (s) { if (!seen[s.id]) { allStepIds.push(s.id); seen[s.id] = true; } });
+    stepsB.forEach(function (s) { if (!seen[s.id]) { allStepIds.push(s.id); seen[s.id] = true; } });
+
+    // Summary section for each column
+    function renderSummaryCol(summary, otherSummary) {
+      var statusDiff = summary.status !== otherSummary.status;
+      var durDiff = summary.duration_ms !== otherSummary.duration_ms;
+      var stepsDiff = (summary.completed_steps !== otherSummary.completed_steps) ||
+                      (summary.total_steps !== otherSummary.total_steps);
+      var rows = '';
+      rows += '<div class="diff-summary-row' + (statusDiff ? ' diff-changed' : '') + '">' +
+        '<span class="diff-label">Status</span>' +
+        '<span class="diff-value">' + statusBadge(summary.status || 'unknown') + '</span>' +
+        '</div>';
+      rows += '<div class="diff-summary-row' + (durDiff ? ' diff-changed' : '') + '">' +
+        '<span class="diff-label">Duration</span>' +
+        '<span class="diff-value">' + esc(fmtDuration(summary.duration_ms)) + '</span>' +
+        '</div>';
+      rows += '<div class="diff-summary-row' + (stepsDiff ? ' diff-changed' : '') + '">' +
+        '<span class="diff-label">Steps</span>' +
+        '<span class="diff-value">' + esc((summary.completed_steps || 0) + '/' + (summary.total_steps || 0)) + '</span>' +
+        '</div>';
+      return rows;
+    }
+
+    // Step rows for each column
+    function renderStepCol(stepId, ownMap, otherMap) {
+      var step = ownMap[stepId];
+      var other = otherMap[stepId];
+      if (!step) {
+        return '<div class="diff-step-row diff-missing">' +
+          '<span class="diff-step-name">' + esc(stepId) + '</span>' +
+          '<span class="diff-step-duration">\u2014</span>' +
+          '</div>';
+      }
+      var statusChanged = !other || step.status !== other.status;
+      var arrow = '';
+      if (statusChanged && other) {
+        if (step.status === 'complete' && other.status === 'failed') {
+          arrow = '<span class="diff-arrow-improve">\u2191</span>';
+        } else if (step.status === 'failed' && other.status === 'complete') {
+          arrow = '<span class="diff-arrow-regress">\u2193</span>';
+        }
+      }
+      var delta = '';
+      if (other && step.durationMs !== other.durationMs) {
+        var diff = step.durationMs - other.durationMs;
+        if (Math.abs(diff) >= 1) {
+          var cls = diff < 0 ? 'diff-delta-better' : 'diff-delta-worse';
+          var sign = diff < 0 ? '' : '+';
+          delta = '<span class="diff-delta ' + cls + '">' + esc(sign + Math.round(diff) + 'ms') + '</span>';
+        }
+      }
+      return '<div class="diff-step-row' + (statusChanged ? ' diff-changed' : '') + '">' +
+        '<span class="diff-step-name">' + esc(stepId) + '</span>' +
+        arrow +
+        '<span class="diff-step-duration">' + esc(fmtDuration(step.durationMs)) + delta + '</span>' +
+        '</div>';
+    }
+
+    var idA = summaryA.run_id || runA.run_id || '';
+    var idB = summaryB.run_id || runB.run_id || '';
+
+    var colAHeader = '<div class="diff-column-header">' +
+      '<span class="mono">' + esc((idA || '').slice(0, 8) || 'Run A') + '</span>' +
+      statusBadge(summaryA.status || 'unknown') +
+      '</div>';
+    var colBHeader = '<div class="diff-column-header">' +
+      '<span class="mono">' + esc((idB || '').slice(0, 8) || 'Run B') + '</span>' +
+      statusBadge(summaryB.status || 'unknown') +
+      '</div>';
+
+    var colASummary = renderSummaryCol(summaryA, summaryB);
+    var colBSummary = renderSummaryCol(summaryB, summaryA);
+
+    var colASteps = allStepIds.map(function (id) { return renderStepCol(id, stepMapA, stepMapB); }).join('');
+    var colBSteps = allStepIds.map(function (id) { return renderStepCol(id, stepMapB, stepMapA); }).join('');
+
+    var colA = '<div class="diff-column">' + colAHeader + colASummary + colASteps + '</div>';
+    var colB = '<div class="diff-column">' + colBHeader + colBSummary + colBSteps + '</div>';
+
+    return '<div class="panel"><div class="diff-view">' + colA + colB + '</div></div>';
+  }
+
+  /**
+   * Show the diff view for two run IDs.
+   * @param {string} idA
+   * @param {string} idB
+   */
+  function showDiffView(idA, idB) {
+    currentView = 'diff';
+    document.title = 'Kairos \u2014 Compare Runs';
+    var app = document.getElementById('app');
+    app.innerHTML = '<div class="loading">Loading comparison\u2026</div>';
+
+    var navBar = '<div class="detail-nav">' +
+      '<button class="back-btn" id="back-btn">\u2190 Back to runs</button>' +
+      '<span class="detail-breadcrumb">Comparing ' + esc(idA.slice(0, 8)) + ' vs ' + esc(idB.slice(0, 8)) + '</span>' +
+      '</div>';
+
+    Promise.all([fetchRunDetail(idA), fetchRunDetail(idB)])
+      .then(function (results) {
+        var runA = results[0];
+        var runB = results[1];
+        app.innerHTML = navBar + renderDiffView(runA, runB);
+        var backBtn = document.getElementById('back-btn');
+        if (backBtn) {
+          backBtn.addEventListener('click', function () { navigate('run-list', {}); });
+        }
+      })
+      .catch(function (err) {
+        app.innerHTML = navBar +
+          '<div class="loading">Failed to load run data for comparison: ' + esc(String(err)) + '</div>';
+        var backBtn = document.getElementById('back-btn');
+        if (backBtn) {
+          backBtn.addEventListener('click', function () { navigate('run-list', {}); });
+        }
+      });
   }
 
   // ============================================================

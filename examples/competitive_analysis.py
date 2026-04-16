@@ -16,18 +16,23 @@ This is the workflow from the Kairos architecture mockup:
   4. Generate the final report from research + analysis
 """
 
+import sys
+from pathlib import Path
 from typing import Any, cast
 
 from kairos import (
     SKIP,
     FailureAction,
     FailurePolicy,
+    LogVerbosity,
+    RunLogger,
     Schema,
     Step,
     StepContext,
     Workflow,
     WorkflowStatus,
 )
+from kairos.logger import ConsoleSink, JSONLinesSink
 
 # ---------------------------------------------------------------------------
 # Schemas — contracts for what each step produces
@@ -220,10 +225,28 @@ workflow = Workflow(
 # ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
+    verbose = "--verbose" in sys.argv or "-v" in sys.argv
+
     print("=" * 60)
     print("  Kairos Competitive Analysis Workflow")
+    if verbose:
+        print("  Verbose mode — step input/output will be captured")
     print("=" * 60)
     print()
+
+    # Set up logging when --verbose is passed
+    log_dir = Path("dashboard_logs")
+    if verbose:
+        log_dir.mkdir(parents=True, exist_ok=True)
+        verbosity = LogVerbosity.VERBOSE
+        logger = RunLogger(
+            verbosity=verbosity,
+            sinks=[
+                ConsoleSink(stream=sys.stderr, verbosity=verbosity),
+                JSONLinesSink(base_dir=str(log_dir)),
+            ],
+        )
+        workflow.add_hook(logger)
 
     result = workflow.run(
         {

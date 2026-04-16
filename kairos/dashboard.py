@@ -21,7 +21,9 @@ Security contracts (S17):
 
 from __future__ import annotations
 
+import csv
 import hmac
+import io
 import json
 import re
 import secrets
@@ -283,6 +285,64 @@ def _get_run_events(log_dir: str, run_id: str) -> list[dict[str, object]] | None
 
 
 # ---------------------------------------------------------------------------
+# Export helpers
+# ---------------------------------------------------------------------------
+
+
+def _sanitize_csv_cell(value: str) -> str:
+    """Prevent CSV injection by escaping formula trigger characters.
+
+    If a cell value starts with =, +, -, or @, prepend a single quote
+    to prevent spreadsheet applications from interpreting the value as a
+    formula.
+
+    Args:
+        value: The cell value string to sanitize.
+
+    Returns:
+        The sanitized cell value.
+    """
+    if value and value[0] in ("=", "+", "-", "@"):
+        return "'" + value
+    return value
+
+
+def _events_to_csv(events: list[dict[str, object]]) -> str:
+    """Convert a list of event dicts to a CSV string.
+
+    Columns: timestamp, event_type, step_id, level, data_json.
+    Missing fields produce empty cells.  The data field is serialized as
+    a JSON string in the data_json column.  All string cell values are
+    sanitized against CSV injection via _sanitize_csv_cell().
+
+    Args:
+        events: List of event dicts from a .jsonl run file.
+
+    Returns:
+        CSV string with header row and one data row per event.
+    """
+    buf = io.StringIO()
+    fieldnames = ["timestamp", "event_type", "step_id", "level", "data_json"]
+    writer = csv.DictWriter(buf, fieldnames=fieldnames, extrasaction="ignore")
+    writer.writeheader()
+    for event in events:
+        raw_data = event.get("data", {})
+        data_json = json.dumps(raw_data) if isinstance(raw_data, dict) else json.dumps({})
+        writer.writerow(
+            {
+                "timestamp": _sanitize_csv_cell(str(event.get("timestamp", ""))),
+                "event_type": _sanitize_csv_cell(str(event.get("event_type", ""))),
+                "step_id": _sanitize_csv_cell(
+                    str(event.get("step_id", "")) if event.get("step_id") is not None else ""
+                ),
+                "level": _sanitize_csv_cell(str(event.get("level", ""))),
+                "data_json": _sanitize_csv_cell(data_json),
+            }
+        )
+    return buf.getvalue()
+
+
+# ---------------------------------------------------------------------------
 # HTTP Handler
 # ---------------------------------------------------------------------------
 
@@ -437,6 +497,69 @@ class DashboardHandler(BaseHTTPRequestHandler):
         summary = _extract_summary(events)
         self._send_json({"run_id": run_id, "summary": summary, "events": events})
 
+    def _send_download(self, body: bytes, content_type: str, filename: str) -> None:
+        """Send a file download response.
+
+        Sets Content-Disposition: attachment so the browser prompts a save dialog.
+        Calls _set_common_headers() for CSP + nosniff compliance (S17.4).
+
+        Args:
+            body: Response body bytes.
+            content_type: MIME type (e.g. 'application/json').
+            filename: Suggested filename for the download.
+        """
+        self.send_response(200)
+        self._set_common_headers(content_type)
+        self.send_header("Content-Disposition", f'attachment; filename="{filename}"')
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _handle_export_json(self, run_id: str) -> None:
+        """Export a run's events as a pretty-printed JSON file download.
+
+        Args:
+            run_id: The run identifier extracted from the URL path.
+        """
+        server = cast("DashboardServer", self.server)
+
+        # S17.7: validate run_id before any file operations
+        if not run_id or not _SAFE_RUN_ID_RE.match(run_id):
+            self._send_error_json(404, "Run not found")
+            return
+
+        events = _get_run_events(server.log_dir, run_id)
+        if events is None:
+            self._send_error_json(404, f"Run not found: {run_id}")
+            return
+
+        summary = _extract_summary(events)
+        payload = {"run_id": run_id, "summary": summary, "events": events}
+        body = json.dumps(payload, indent=2).encode("utf-8")
+        self._send_download(body, "application/json", f"run_{run_id}.json")
+
+    def _handle_export_csv(self, run_id: str) -> None:
+        """Export a run's events as a CSV file download.
+
+        Args:
+            run_id: The run identifier extracted from the URL path.
+        """
+        server = cast("DashboardServer", self.server)
+
+        # S17.7: validate run_id before any file operations
+        if not run_id or not _SAFE_RUN_ID_RE.match(run_id):
+            self._send_error_json(404, "Run not found")
+            return
+
+        events = _get_run_events(server.log_dir, run_id)
+        if events is None:
+            self._send_error_json(404, f"Run not found: {run_id}")
+            return
+
+        csv_str = _events_to_csv(events)
+        body = csv_str.encode("utf-8")
+        self._send_download(body, "text/csv; charset=utf-8", f"run_{run_id}.csv")
+
     def _handle_api_health(self) -> None:
         """Health check — no authentication required (GET /api/health)."""
         self._send_json({"status": "ok"})
@@ -478,10 +601,15 @@ class DashboardHandler(BaseHTTPRequestHandler):
             case "/api/runs":
                 self._handle_api_runs()
             case _ if path.startswith("/api/runs/"):
-                run_id = path[len("/api/runs/") :]
-                # Strip any trailing slashes
-                run_id = run_id.rstrip("/")
-                self._handle_api_run_detail(run_id)
+                remainder = path[len("/api/runs/") :].rstrip("/")
+                if remainder.endswith("/export/json"):
+                    run_id = remainder[: -len("/export/json")]
+                    self._handle_export_json(run_id)
+                elif remainder.endswith("/export/csv"):
+                    run_id = remainder[: -len("/export/csv")]
+                    self._handle_export_csv(run_id)
+                else:
+                    self._handle_api_run_detail(remainder)
             case _:
                 self._send_error_json(404, "Not found")
 
