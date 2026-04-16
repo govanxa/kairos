@@ -91,6 +91,12 @@ _DASHBOARD_HTML: str = """<!DOCTYPE html>
   .evt-ts { color: #475569; min-width: 86px; }
   .evt-type { color: #7dd3fc; min-width: 180px; }
   .evt-data { color: #94a3b8; word-break: break-all; }
+  .evt-error { background: #1c0a0a; border-left: 3px solid #ef4444; padding-left: 9px; }
+  .evt-error .evt-type { color: #fca5a5; font-weight: 600; }
+  .evt-error .evt-data { color: #fca5a5; }
+  .evt-warn { background: #1c1508; border-left: 3px solid #eab308; padding-left: 9px; }
+  .evt-warn .evt-type { color: #fde68a; font-weight: 600; }
+  .evt-warn .evt-data { color: #fde68a; }
   .back-btn { background: #334155; border: none; color: #e2e8f0; padding: 8px 16px;
               border-radius: 6px; cursor: pointer; margin-bottom: 16px;
               font-size: 0.875rem; }
@@ -237,9 +243,15 @@ _DASHBOARD_HTML: str = """<!DOCTYPE html>
           const dataStr = Object.keys(data).length
             ? JSON.stringify(data).slice(0, 120)
             : '';
-          evtItems += '<li>' +
+          const et = evt.event_type || '';
+          const rowCls = (et === 'step_fail' || et === 'validation_fail')
+            ? ' evt-error'
+            : (et === 'step_retry')
+            ? ' evt-warn'
+            : '';
+          evtItems += '<li class="' + rowCls + '">' +
             '<span class="evt-ts">' + esc(ts) + '</span>' +
-            '<span class="evt-type">' + esc(evt.event_type||'') + '</span>' +
+            '<span class="evt-type">' + esc(et) + '</span>' +
             '<span class="evt-data">' + esc(dataStr) + '</span>' +
             '</li>';
         }
