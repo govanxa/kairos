@@ -75,11 +75,8 @@ Issues = "https://github.com/govanxa/kairos/issues"
 [tool.hatch.build.targets.wheel]
 packages = ["kairos"]
 
-[tool.hatch.build.targets.wheel.force-include]
-"kairos/dashboard_ui" = "kairos/dashboard_ui"
-
-[tool.setuptools.package-data]
-kairos = ["dashboard_ui/*.html", "dashboard_ui/*.css", "dashboard_ui/*.js"]
+# dashboard_ui/ is inside kairos/ — hatchling auto-includes it.
+# No force-include or package-data needed.
 
 # --- Tool Configuration ---
 
