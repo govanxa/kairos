@@ -1049,6 +1049,77 @@ workflow = Workflow(  # <-- the CLI finds this
 
 ---
 
+## 13. Dashboard — Visual Run History
+
+The dashboard is a localhost web UI for browsing workflow runs. It reads the same `.jsonl` files that `kairos inspect` reads, but serves them as a browsable web interface.
+
+> **Try it now:** Run `py examples/dashboard_demo.py` to generate sample run data, then `kairos dashboard --log-dir dashboard_logs --open` to view it in your browser. No API keys needed.
+
+### Start the dashboard
+
+```bash
+# First, generate some log data by running a workflow with JSONL logging
+kairos run my_workflow.py --log-format jsonl --log-file ./logs
+
+# Launch the dashboard
+kairos dashboard --log-dir ./logs
+```
+
+On startup, the dashboard prints a URL with an auth token:
+
+```
+Dashboard running at http://127.0.0.1:8420?token=abc123def456...
+```
+
+Open that URL in your browser. The token is required — requests without it get `403 Forbidden`.
+
+### Options
+
+```bash
+# Custom port
+kairos dashboard --log-dir ./logs --port 9000
+
+# Auto-open in your default browser
+kairos dashboard --log-dir ./logs --open
+
+# Disable auth (NOT recommended on shared machines)
+kairos dashboard --log-dir ./logs --no-auth
+```
+
+### What you see
+
+**Run list** — A table of all past runs with status badges (green/red/gray), step counts, duration, and timestamps. Click any row to drill into the detail view.
+
+**Run detail** — A summary grid (status, workflow name, duration, steps completed) plus a full event timeline showing every `step_start`, `step_complete`, `step_fail`, `step_retry`, `step_skip`, and validation event.
+
+### API endpoints
+
+The dashboard also exposes a JSON API (useful for scripting or integrations):
+
+```bash
+# List all runs
+curl "http://127.0.0.1:8420/api/runs?token=YOUR_TOKEN"
+
+# Get events for a specific run
+curl "http://127.0.0.1:8420/api/runs/RUN_ID?token=YOUR_TOKEN"
+
+# Health check (no auth required)
+curl "http://127.0.0.1:8420/api/health"
+```
+
+### Security (S17)
+
+The dashboard is designed for **single-user local use**:
+
+- **Localhost only** — binds to `127.0.0.1`, never `0.0.0.0`. No config to change this. If you need remote access, use SSH tunneling.
+- **Token auth** — a random token (via `secrets.token_urlsafe(32)`) is generated on each startup. Timing-safe comparison via `hmac.compare_digest()`.
+- **CSP headers** — `Content-Security-Policy` and `X-Content-Type-Options: nosniff` on every response, including errors.
+- **Read-only** — `GET` only. `POST`, `PUT`, `DELETE`, and other methods return `405 Method Not Allowed`.
+- **Pre-redacted data** — the dashboard reads `.jsonl` files that were already redacted by `RunLogger`. Sensitive keys appear as `[REDACTED]` — the dashboard never sees the raw values.
+- **No external resources** — the entire UI (HTML, CSS, JS) is embedded in a single Python string. Nothing is loaded from CDNs or external URLs.
+
+---
+
 ## Next Steps
 
 - **Run the examples** in the `examples/` directory to see more patterns
@@ -1089,3 +1160,4 @@ workflow = Workflow(  # <-- the CLI finds this
 | `kairos validate` | CLI: `kairos validate module.py` | Dry-run validation without execution |
 | `kairos inspect` | CLI: `kairos inspect ./logs/` | View past run details from `.jsonl` log files |
 | `kairos version` | CLI: `kairos version` | Print SDK version |
+| `kairos dashboard` | CLI: `kairos dashboard --log-dir ./logs` | Localhost web UI for run history |

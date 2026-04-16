@@ -200,6 +200,23 @@ kairos version
 
 The CLI enforces **module import restriction** (security requirement S13) -- only modules from the current directory or explicitly allowed directories can be loaded. Input is always parsed via `json.loads()`, never `eval()`. The `inspect` command reads `.jsonl` log files written by `JSONLinesSink` and displays a colored summary with event timeline. Filter by failures (`--failures`) or step name (`--step`), and disable color with `--no-color`.
 
+### Dashboard
+Browse run history in your browser — no cloud, no setup, just `localhost`:
+
+```bash
+pip install kairos-ai[cli]
+
+# Generate some run logs first
+kairos run my_workflow.py --log-format jsonl --log-file ./logs
+
+# Launch the dashboard
+kairos dashboard --log-dir ./logs --open
+```
+
+The dashboard serves a single-page web UI on `127.0.0.1:8420` with a token-authenticated API. View all past runs in a table, click into any run to see step-by-step timelines, and inspect events. Zero new dependencies — built on Python's stdlib `http.server`.
+
+**Security (S17):** Binds to `127.0.0.1` only (never `0.0.0.0`), random token auth via `hmac.compare_digest()`, CSP headers on every response, strictly read-only (`GET` only), reads pre-redacted log files.
+
 ### Model-Agnostic
 Kairos doesn't care which LLM powers your steps. Any callable that accepts a `StepContext` works — plain functions, API calls, local models, or no LLM at all.
 
@@ -347,6 +364,7 @@ python examples/scoped_state.py
 | **Observability** | Run Logger | Structured event logging with pluggable sinks and verbosity levels |
 | | CLI Runner | `kairos run`, `kairos validate`, `kairos version` with S13 module import security |
 | | CLI Inspect | `kairos inspect` — view past runs from `.jsonl` logs with colored output and filtering |
+| | Dashboard | `kairos dashboard` — localhost web UI for run history with token auth (S17) |
 
 ---
 
@@ -380,10 +398,10 @@ python examples/scoped_state.py
 | Run Logger (structured logging, pluggable sinks) | Done |
 | CLI Runner (`kairos run`, `kairos validate`, `kairos version`) | Done |
 | CLI Inspect (`kairos inspect` — view past runs from log files) | Done |
-| Dashboard | Planned |
+| Dashboard (`kairos dashboard` — localhost web UI) | Done |
 | Plugin System | Planned |
 
-1,365 tests passing, 98% coverage across 19 source files.
+1,470 tests passing, 97% coverage across 20 source files.
 
 ---
 
@@ -410,6 +428,7 @@ pip install -e ".[dev]"
 | `examples/run_logger.py` | **Run Logger** — all 4 sinks, verbosity levels, sensitive key redaction, RunLog inspection (no API keys needed) |
 | `examples/real_claude_logged.py` | **Run Logger + Claude** — concurrent Claude API calls with live lifecycle logging and RunLog inspection |
 | `examples/cli_workflow.py` | **CLI Runner** — designed for `kairos run`/`kairos validate`, no `__main__` block needed (no API keys needed) |
+| `examples/dashboard_demo.py` | **Dashboard** — generates 3 logged runs (2 success, 1 failure), then instructions to launch `kairos dashboard` (no API keys needed) |
 
 ---
 
