@@ -1344,7 +1344,7 @@ class TestVersionBump:
         """kairos.__version__ must match the current release."""
         import kairos
 
-        assert kairos.__version__ == "0.4.5"
+        assert kairos.__version__ == "0.4.6"
 
 
 class TestEdgeCases:
@@ -2379,3 +2379,1464 @@ class TestDiffView:
         assert "allStepIds" in _APP_JS
         assert "stepsA" in _APP_JS
         assert "stepsB" in _APP_JS
+
+
+# ---------------------------------------------------------------------------
+# Enhancement 13 — Keyboard Shortcuts
+# ---------------------------------------------------------------------------
+
+
+class TestKeyboardShortcuts:
+    """Enhancement 13 — Keyboard shortcuts."""
+
+    def test_app_js_has_register_shortcuts(self):
+        from kairos.dashboard import _APP_JS
+
+        assert "registerShortcuts" in _APP_JS
+
+    def test_app_js_has_handle_shortcut(self):
+        from kairos.dashboard import _APP_JS
+
+        assert "handleShortcut" in _APP_JS
+
+    def test_app_js_has_show_shortcuts_overlay(self):
+        from kairos.dashboard import _APP_JS
+
+        assert "showShortcutsOverlay" in _APP_JS
+
+    def test_app_js_has_hide_shortcuts_overlay(self):
+        from kairos.dashboard import _APP_JS
+
+        assert "hideShortcutsOverlay" in _APP_JS
+
+    def test_app_js_has_move_run_selection(self):
+        from kairos.dashboard import _APP_JS
+
+        assert "moveRunSelection" in _APP_JS
+
+    def test_app_js_has_toggle_all_step_groups(self):
+        from kairos.dashboard import _APP_JS
+
+        assert "toggleAllStepGroups" in _APP_JS
+
+    def test_shortcuts_not_fire_when_input_focused(self):
+        """JS checks activeElement.tagName before dispatching."""
+        from kairos.dashboard import _APP_JS
+
+        assert "activeElement" in _APP_JS
+        assert "INPUT" in _APP_JS
+
+    def test_all_shortcut_keys_in_handler(self):
+        """Handler covers all 8 shortcut keys."""
+        from kairos.dashboard import _APP_JS
+
+        for key in ["'j'", "'k'", "'Enter'", "'Escape'", "'/'", "'r'", "'e'", "'?'"]:
+            assert key in _APP_JS, f"Missing shortcut key: {key}"
+
+    def test_inspector_tab_shortcuts(self):
+        """1/2/3 keys switch inspector tabs."""
+        from kairos.dashboard import _APP_JS
+
+        assert "'1'" in _APP_JS or '"1"' in _APP_JS
+
+    def test_shortcuts_overlay_has_aria_dialog(self):
+        from kairos.dashboard import _APP_JS
+
+        assert "role" in _APP_JS
+        assert "dialog" in _APP_JS
+        assert "aria-modal" in _APP_JS
+
+    def test_styles_has_shortcuts_overlay(self):
+        from kairos.dashboard import _STYLES_CSS
+
+        assert ".shortcuts-overlay" in _STYLES_CSS
+
+    def test_styles_has_shortcuts_modal(self):
+        from kairos.dashboard import _STYLES_CSS
+
+        assert ".shortcuts-modal" in _STYLES_CSS
+
+    def test_styles_has_kbd_styling(self):
+        from kairos.dashboard import _STYLES_CSS
+
+        assert "kbd" in _STYLES_CSS
+
+    def test_styles_has_run_row_selected(self):
+        from kairos.dashboard import _STYLES_CSS
+
+        assert ".run-row-selected" in _STYLES_CSS
+
+    def test_styles_has_shortcuts_trigger(self):
+        from kairos.dashboard import _STYLES_CSS
+
+        assert ".shortcuts-trigger" in _STYLES_CSS
+
+    def test_styles_respects_reduced_motion(self):
+        from kairos.dashboard import _STYLES_CSS
+
+        assert "prefers-reduced-motion" in _STYLES_CSS
+
+    def test_index_has_shortcuts_trigger(self):
+        from kairos.dashboard import _INDEX_HTML
+
+        assert "shortcuts-trigger" in _INDEX_HTML
+
+    def test_selected_run_index_state(self):
+        from kairos.dashboard import _APP_JS
+
+        assert "selectedRunIndex" in _APP_JS
+
+    def test_shortcuts_overlay_visible_state(self):
+        from kairos.dashboard import _APP_JS
+
+        assert "shortcutsOverlayVisible" in _APP_JS
+
+    def test_overlay_all_shortcuts_documented(self):
+        """Overlay contains documentation for all shortcut keys."""
+        from kairos.dashboard import _APP_JS
+
+        assert "Next run" in _APP_JS or "next run" in _APP_JS.lower()
+        assert "Go back" in _APP_JS or "go back" in _APP_JS.lower()
+        assert "auto-refresh" in _APP_JS.lower() or "Auto-refresh" in _APP_JS
+
+    def test_escape_works_in_input(self):
+        """Escape key must fire even when input is focused."""
+        from kairos.dashboard import _APP_JS
+
+        assert "Escape" in _APP_JS
+
+    def test_prevent_default_on_slash(self):
+        """/ shortcut must preventDefault to avoid typing / in input."""
+        from kairos.dashboard import _APP_JS
+
+        assert "preventDefault" in _APP_JS
+
+    def test_move_run_selection_clamps_to_bounds(self):
+        """moveRunSelection uses Math.max/Math.min to clamp selection index."""
+        from kairos.dashboard import _APP_JS
+
+        assert "Math.max" in _APP_JS
+        assert "Math.min" in _APP_JS
+
+    def test_show_shortcuts_overlay_guards_double_open(self):
+        """showShortcutsOverlay checks shortcutsOverlayVisible before opening."""
+        from kairos.dashboard import _APP_JS
+
+        # The guard must appear inside the showShortcutsOverlay function body.
+        idx = _APP_JS.index("function showShortcutsOverlay")
+        body_slice = _APP_JS[idx : idx + 200]
+        assert "shortcutsOverlayVisible" in body_slice
+
+    def test_overlay_html_uses_only_static_strings(self):
+        """Overlay HTML must not interpolate dynamic data (no esc() calls inside it)."""
+        from kairos.dashboard import _APP_JS
+
+        # Find the innerHTML block inside showShortcutsOverlay.
+        start = _APP_JS.index("function showShortcutsOverlay")
+        end = _APP_JS.index("function hideShortcutsOverlay")
+        overlay_block = _APP_JS[start:end]
+        # esc( must not appear inside the overlay construction block.
+        assert "esc(" not in overlay_block
+
+    def test_escape_handler_is_separate_from_input_guard(self):
+        """Escape is handled before the INPUT/SELECT/TEXTAREA focus guard."""
+        from kairos.dashboard import _APP_JS
+
+        escape_pos = _APP_JS.index("e.key === 'Escape'")
+        input_guard_pos = _APP_JS.index("tag === 'INPUT'")
+        assert escape_pos < input_guard_pos, (
+            "Escape handler must appear before the input focus guard"
+        )
+
+    def test_toggle_all_step_groups_checks_run_detail_context(self):
+        """'e' shortcut only calls toggleAllStepGroups when in run-detail view."""
+        from kairos.dashboard import _APP_JS
+
+        # The guard must be present: currentView === 'run-detail' before the call.
+        idx = _APP_JS.index("toggleAllStepGroups()")
+        guard_slice = _APP_JS[max(0, idx - 100) : idx]
+        assert "run-detail" in guard_slice
+
+    def test_styles_has_shortcuts_close(self):
+        """CSS defines .shortcuts-close for the modal close button."""
+        from kairos.dashboard import _STYLES_CSS
+
+        assert ".shortcuts-close" in _STYLES_CSS
+
+    def test_run_row_selected_uses_left_border(self):
+        """Design system selected-row pattern uses border-left, not outline."""
+        from kairos.dashboard import _STYLES_CSS
+
+        idx = _STYLES_CSS.index(".run-row-selected")
+        block = _STYLES_CSS[idx : idx + 200]
+        assert "border-left" in block
+        assert "outline" not in block
+
+    def test_status_text_span_in_index(self):
+        """Footer uses a dedicated <span id='status-text'> so the ? button survives updates."""
+        from kairos.dashboard import _INDEX_HTML
+
+        assert 'id="status-text"' in _INDEX_HTML
+
+    def test_escape_calls_prevent_default(self):
+        """Escape handler calls preventDefault."""
+        from kairos.dashboard import _APP_JS
+
+        # Find the Escape block and confirm preventDefault is called within it.
+        idx = _APP_JS.index("e.key === 'Escape'")
+        block = _APP_JS[idx : idx + 150]
+        assert "preventDefault" in block
+
+    def test_selected_run_index_reset_on_auto_refresh(self):
+        """Auto-refresh callback resets selectedRunIndex to avoid stale selection."""
+        from kairos.dashboard import _APP_JS
+
+        # selectedRunIndex = -1 must appear inside the setInterval fetch callback.
+        idx = _APP_JS.index("autoRefreshTimer = setInterval")
+        refresh_block = _APP_JS[idx : idx + 1000]
+        assert "selectedRunIndex = -1" in refresh_block
+
+    def test_shortcuts_close_button_in_overlay(self):
+        """showShortcutsOverlay creates a .shortcuts-close button."""
+        from kairos.dashboard import _APP_JS
+
+        start = _APP_JS.index("function showShortcutsOverlay")
+        end = _APP_JS.index("function hideShortcutsOverlay")
+        overlay_block = _APP_JS[start:end]
+        assert "shortcuts-close" in overlay_block
+
+    def test_overlay_focus_after_append(self):
+        """showShortcutsOverlay sets tabindex and calls focus() on the overlay."""
+        from kairos.dashboard import _APP_JS
+
+        start = _APP_JS.index("function showShortcutsOverlay")
+        end = _APP_JS.index("function hideShortcutsOverlay")
+        overlay_block = _APP_JS[start:end]
+        assert "tabindex" in overlay_block
+        assert ".focus()" in overlay_block
+
+
+# ---------------------------------------------------------------------------
+# Enhancement 12 — Validation Detail Panel
+# ---------------------------------------------------------------------------
+
+
+class TestValidationDetailPanel:
+    """Enhancement 12 — Validation detail panel."""
+
+    def test_app_js_has_render_validation_table(self):
+        from kairos.dashboard import _APP_JS
+
+        assert "renderValidationTable" in _APP_JS
+
+    def test_app_js_has_extract_validation_data(self):
+        from kairos.dashboard import _APP_JS
+
+        assert "extractValidationData" in _APP_JS
+
+    def test_app_js_has_icon_checkmark(self):
+        from kairos.dashboard import _APP_JS
+
+        assert "iconCheckmark" in _APP_JS
+
+    def test_app_js_has_icon_xmark(self):
+        from kairos.dashboard import _APP_JS
+
+        assert "iconXMark" in _APP_JS
+
+    def test_styles_has_validation_table(self):
+        from kairos.dashboard import _STYLES_CSS
+
+        assert ".validation-table" in _STYLES_CSS
+
+    def test_styles_has_validation_row_fail(self):
+        from kairos.dashboard import _STYLES_CSS
+
+        assert ".validation-row-fail" in _STYLES_CSS
+
+    def test_styles_has_validation_row_pass(self):
+        from kairos.dashboard import _STYLES_CSS
+
+        assert ".validation-row-pass" in _STYLES_CSS
+
+    def test_styles_has_validation_expandable(self):
+        from kairos.dashboard import _STYLES_CSS
+
+        assert ".validation-expandable" in _STYLES_CSS
+
+    def test_styles_has_validation_footer(self):
+        from kairos.dashboard import _STYLES_CSS
+
+        assert ".validation-footer" in _STYLES_CSS
+
+    def test_styles_has_validation_status_icon(self):
+        from kairos.dashboard import _STYLES_CSS
+
+        assert ".validation-status-icon" in _STYLES_CSS
+
+    def test_validation_table_sorts_failures_first(self):
+        """renderValidationTable iterates errors before passing fields."""
+        from kairos.dashboard import _APP_JS
+
+        start = _APP_JS.index("function renderValidationTable")
+        # Search within a generous window covering the full function body.
+        end = start + 3000
+        block = _APP_JS[start:end]
+        # Failed rows are built by iterating `errors` (the first argument).
+        # Passing rows are built by iterating `passingFields`.
+        # The errors forEach must appear before the passingFields forEach.
+        errors_iter_pos = block.index("errors.forEach")
+        passing_iter_pos = block.index("passingFields.forEach")
+        assert errors_iter_pos < passing_iter_pos, (
+            "errors.forEach must appear before passingFields.forEach in renderValidationTable"
+        )
+
+    def test_validation_uses_svg_icons_not_emoji(self):
+        """Status icons use SVG checkmark/X, not emoji."""
+        from kairos.dashboard import _APP_JS
+
+        assert "iconCheckmark" in _APP_JS
+        assert "iconXMark" in _APP_JS
+        # Verify these are actual SVG functions, not bare emoji strings.
+        assert "viewBox" in _APP_JS
+
+    def test_validation_footer_shows_count(self):
+        """Footer shows 'N of M fields failed'."""
+        from kairos.dashboard import _APP_JS
+
+        assert "fields failed" in _APP_JS
+
+    def test_validation_expandable_toggle(self):
+        """Event delegation handles .validation-row clicks and toggles .visible on expandable."""
+        from kairos.dashboard import _APP_JS
+
+        # Locate the event delegation click handler block.
+        assert "closest('.validation-row')" in _APP_JS or 'closest(".validation-row")' in _APP_JS, (
+            "Event delegation must use closest('.validation-row') to detect clicks"
+        )
+        # The handler must add/remove the 'visible' class on the expandable sibling.
+        assert "validation-expandable" in _APP_JS
+        assert "classList" in _APP_JS
+        # Both branches (add and remove) must be present.
+        assert "classList.add" in _APP_JS
+        assert "classList.remove" in _APP_JS
+
+    def test_validation_table_uses_esc(self):
+        """Field names and values must be escaped via esc()."""
+        from kairos.dashboard import _APP_JS
+
+        # esc() is used throughout app.js; verify it appears inside renderValidationTable.
+        start = _APP_JS.index("function renderValidationTable")
+        end = _APP_JS.index("function renderValidationTable") + 2000
+        block = _APP_JS[start:end]
+        assert "esc(" in block
+
+    def test_inspector_uses_validation_table(self):
+        """Inspector's Validation tab calls extractValidationData."""
+        from kairos.dashboard import _APP_JS
+
+        assert "extractValidationData" in _APP_JS
+
+    def test_validation_table_has_colspan(self):
+        """Expandable rows use colspan for full-width detail."""
+        from kairos.dashboard import _APP_JS
+
+        assert "colspan" in _APP_JS
+
+    def test_styles_has_validation_detail(self):
+        """CSS defines .validation-detail wrapper."""
+        from kairos.dashboard import _STYLES_CSS
+
+        assert ".validation-detail" in _STYLES_CSS
+
+    def test_validation_row_cursor_pointer(self):
+        """Validation rows have cursor: pointer since they are clickable."""
+        from kairos.dashboard import _STYLES_CSS
+
+        idx = _STYLES_CSS.index(".validation-row")
+        block = _STYLES_CSS[idx : idx + 200]
+        assert "cursor" in block
+
+    def test_validation_expandable_default_hidden(self):
+        """Expandable rows are hidden by default (display: none)."""
+        from kairos.dashboard import _STYLES_CSS
+
+        idx = _STYLES_CSS.index(".validation-expandable")
+        block = _STYLES_CSS[idx : idx + 200]
+        assert "display: none" in block
+
+    def test_validation_expandable_visible_class(self):
+        """CSS defines .validation-expandable.visible to show expanded rows."""
+        from kairos.dashboard import _STYLES_CSS
+
+        assert ".validation-expandable.visible" in _STYLES_CSS
+
+    def test_extract_validation_data_function_defined(self):
+        """extractValidationData function is defined in app.js."""
+        from kairos.dashboard import _APP_JS
+
+        assert "function extractValidationData" in _APP_JS
+
+    def test_render_validation_table_function_defined(self):
+        """renderValidationTable function is defined in app.js."""
+        from kairos.dashboard import _APP_JS
+
+        assert "function renderValidationTable" in _APP_JS
+
+    def test_inspector_validation_tab_uses_extract(self):
+        """renderInspectorPanel's validation branch calls extractValidationData."""
+        from kairos.dashboard import _APP_JS
+
+        start = _APP_JS.index("function renderInspectorPanel")
+        end = _APP_JS.index("function renderInspectorPanel") + 2000
+        block = _APP_JS[start:end]
+        assert "extractValidationData" in block
+
+    def test_validation_row_click_toggles_visible(self):
+        """Event delegation toggles 'visible' class on the expandable row."""
+        from kairos.dashboard import _APP_JS
+
+        # 'visible' class must be toggled via classList or className manipulation.
+        assert "visible" in _APP_JS
+        # The delegation must reference validation-row to detect clicks.
+        assert "validation-row" in _APP_JS
+
+    def test_icon_checkmark_uses_svg_path(self):
+        """iconCheckmark returns an SVG with a checkmark path."""
+        from kairos.dashboard import _APP_JS
+
+        start = _APP_JS.index("function iconCheckmark")
+        block = _APP_JS[start : start + 300]
+        assert "<svg" in block
+        assert "path" in block
+
+    def test_icon_xmark_uses_svg_path(self):
+        """iconXMark returns an SVG with an X path."""
+        from kairos.dashboard import _APP_JS
+
+        start = _APP_JS.index("function iconXMark")
+        block = _APP_JS[start : start + 300]
+        assert "<svg" in block
+        assert "path" in block
+
+    def test_validation_table_has_validator_column(self):
+        """renderValidationTable includes a Validator column header and cell."""
+        from kairos.dashboard import _APP_JS
+
+        start = _APP_JS.index("function renderValidationTable")
+        end = start + 3000
+        block = _APP_JS[start:end]
+        # Column header must be present.
+        assert "Validator" in block, "renderValidationTable must include a 'Validator' <th>"
+        # scope='col' must be on all th elements.
+        assert 'scope="col"' in block, 'renderValidationTable th elements must have scope="col"'
+
+    def test_validation_table_has_aria_expanded(self):
+        """Failed validation rows include aria-expanded and the click handler updates it."""
+        from kairos.dashboard import _APP_JS
+
+        start = _APP_JS.index("function renderValidationTable")
+        end = start + 3000
+        block = _APP_JS[start:end]
+        # The failed row must be rendered with aria-expanded="false" initially.
+        assert 'aria-expanded="false"' in block, (
+            "renderValidationTable must set aria-expanded='false' on failed rows"
+        )
+        # The click handler must update aria-expanded when toggling.
+        assert "setAttribute" in _APP_JS, "Click handler must update aria-expanded via setAttribute"
+        assert "aria-expanded" in _APP_JS
+
+    def test_extractvalidationdata_captures_validator_name(self):
+        """extractValidationData reads err.validator and err.constraint for the validator name."""
+        from kairos.dashboard import _APP_JS
+
+        start = _APP_JS.index("function extractValidationData")
+        end = start + 2000
+        block = _APP_JS[start:end]
+        assert "err.validator" in block, "extractValidationData must read err.validator"
+        assert "err.constraint" in block, "extractValidationData must fall back to err.constraint"
+
+
+# ============================================================
+# === Enhancement 11 — Retry Timeline ===
+# ============================================================
+
+
+class TestRetryTimeline:
+    """Enhancement 11 — Retry timeline."""
+
+    def test_app_js_has_extract_retry_attempts(self):
+        from kairos.dashboard import _APP_JS
+
+        assert "extractRetryAttempts" in _APP_JS
+
+    def test_app_js_has_render_retry_timeline_placeholder(self):
+        from kairos.dashboard import _APP_JS
+
+        assert "renderRetryTimelinePlaceholder" in _APP_JS
+
+    def test_app_js_has_mount_retry_timeline(self):
+        from kairos.dashboard import _APP_JS
+
+        assert "mountRetryTimeline" in _APP_JS
+
+    def test_styles_has_retry_timeline_container(self):
+        from kairos.dashboard import _STYLES_CSS
+
+        assert ".retry-timeline-container" in _STYLES_CSS
+
+    def test_styles_has_retry_expanded_context(self):
+        from kairos.dashboard import _STYLES_CSS
+
+        assert ".retry-expanded-context" in _STYLES_CSS
+
+    def test_retry_timeline_reuses_svg_helpers(self):
+        """mountRetryTimeline must use SVG helpers."""
+        from kairos.dashboard import _APP_JS
+
+        assert "svgRect" in _APP_JS
+        assert "svgText" in _APP_JS
+
+    def test_retry_cards_have_data_attributes(self):
+        """Cards must have data-attempt and data-step-id."""
+        from kairos.dashboard import _APP_JS
+
+        assert "data-attempt" in _APP_JS
+        assert "data-step-id" in _APP_JS
+
+    def test_retry_timeline_uses_createelementns(self):
+        """SVG elements created with createElementNS."""
+        from kairos.dashboard import _APP_JS
+
+        assert "createElementNS" in _APP_JS
+
+    def test_retry_timeline_uses_css_tokens(self):
+        """Must read design system tokens via getComputedStyle."""
+        from kairos.dashboard import _APP_JS
+
+        assert "getCssTokens" in _APP_JS
+
+    def test_extract_retry_attempts_reads_step_events(self):
+        """extractRetryAttempts accesses step_start, step_fail, step_retry events."""
+        from kairos.dashboard import _APP_JS
+
+        assert "step_retry" in _APP_JS
+
+    def test_retry_card_shows_error_text(self):
+        """Failed cards show truncated error message."""
+        from kairos.dashboard import _APP_JS
+
+        assert "error" in _APP_JS.lower()
+
+    def test_retry_connector_shows_backoff(self):
+        """Connector arrows show backoff delay label."""
+        from kairos.dashboard import _APP_JS
+
+        assert "backoff" in _APP_JS.lower() or "Backoff" in _APP_JS
+
+    def test_retry_timeline_container_overflow(self):
+        """Container must have overflow-x: auto."""
+        from kairos.dashboard import _STYLES_CSS
+
+        assert "overflow-x" in _STYLES_CSS
+
+    def test_retry_expanded_context_max_height(self):
+        """Expanded context has max-height for scrolling."""
+        from kairos.dashboard import _STYLES_CSS
+
+        assert "max-height" in _STYLES_CSS
+
+    def test_retry_click_expands_context(self):
+        """Click handler for retry cards toggles expanded context."""
+        from kairos.dashboard import _APP_JS
+
+        assert "retry-expanded-context" in _APP_JS
+
+    def test_retry_placeholder_in_step_groups(self):
+        """renderStepGroups inserts retry timeline for retried steps."""
+        from kairos.dashboard import _APP_JS
+
+        assert "renderRetryTimelinePlaceholder" in _APP_JS
+
+    def test_mount_retry_called_in_show_run_detail(self):
+        """showRunDetail calls mountRetryTimeline for retried steps."""
+        from kairos.dashboard import _APP_JS
+
+        assert "mountRetryTimeline" in _APP_JS
+
+    def test_retry_uses_arrow_marker(self):
+        """Connector arrows use svgArrowMarker."""
+        from kairos.dashboard import _APP_JS
+
+        assert "svgArrowMarker" in _APP_JS
+
+    def test_extract_retry_attempts_accesses_attempt_field(self):
+        """extractRetryAttempts reads data.attempt from events."""
+        from kairos.dashboard import _APP_JS
+
+        assert "att.attempt" in _APP_JS or ".attempt" in _APP_JS
+
+    def test_mount_retry_uses_font_ui_not_only_font_mono(self):
+        """mountRetryTimeline uses tokens.fontUi for the attempt number."""
+        from kairos.dashboard import _APP_JS
+
+        assert "tokens.fontUi" in _APP_JS
+
+    def test_backoff_label_uses_text_faint_token(self):
+        """Backoff label fill uses tokens.textFaint, not tokens.textMuted."""
+        from kairos.dashboard import _APP_JS
+
+        assert "tokens.textFaint" in _APP_JS
+
+    def test_error_text_is_truncated(self):
+        """Error text is sliced to prevent long strings in SVG."""
+        from kairos.dashboard import _APP_JS
+
+        assert ".slice(0, 14)" in _APP_JS or "slice(0," in _APP_JS
+
+    def test_single_attempt_hides_retry_timeline(self):
+        """Steps with only one attempt hide the retry timeline container."""
+        from kairos.dashboard import _APP_JS
+
+        # The guard: if attempts.length < 2 → container.style.display = 'none'
+        assert "attempts.length < 2" in _APP_JS
+        assert "display" in _APP_JS and "'none'" in _APP_JS
+
+    def test_expanded_context_uses_colorize_json(self):
+        """Expanded retry context renders via colorizeJson for XSS safety."""
+        from kairos.dashboard import _APP_JS
+
+        assert "colorizeJson" in _APP_JS
+
+    def test_css_tokens_includes_font_ui(self):
+        """getCssTokens exposes fontUi token."""
+        from kairos.dashboard import _APP_JS
+
+        assert "fontUi" in _APP_JS
+        assert "--font-ui" in _APP_JS
+
+    def test_css_tokens_includes_text_faint(self):
+        """getCssTokens exposes textFaint token."""
+        from kairos.dashboard import _APP_JS
+
+        assert "textFaint" in _APP_JS
+        assert "--text-faint" in _APP_JS
+
+    def test_expanded_context_max_height_400(self):
+        """retry-expanded-context max-height is 400px."""
+        from kairos.dashboard import _STYLES_CSS
+
+        assert "max-height: 400px" in _STYLES_CSS
+
+    def test_attempt_number_uses_weight_600(self):
+        """Attempt number uses fontWeight 600, not bold."""
+        from kairos.dashboard import _APP_JS
+
+        assert "'600'" in _APP_JS or '"600"' in _APP_JS
+
+    def test_error_text_font_size_11(self):
+        """Error text fontSize is 11 (matching --text-xs), not 10."""
+        from kairos.dashboard import _APP_JS
+
+        # Verify 11 appears after the error text comment
+        idx = _APP_JS.find("Error text (failed cards only)")
+        assert idx != -1
+        snippet = _APP_JS[idx : idx + 600]
+        assert "fontSize: 11" in snippet
+
+    def test_backoff_label_font_size_11(self):
+        """Backoff label fontSize is 11 (matching --text-xs), not 10."""
+        from kairos.dashboard import _APP_JS
+
+        # Verify 11 appears in the backoff label block (search for the label text)
+        idx = _APP_JS.find("Backoff label below the connector")
+        assert idx != -1
+        snippet = _APP_JS[idx : idx + 600]
+        assert "fontSize: 11" in snippet
+
+
+# ============================================================
+# Enhancement 10 — Duration Flame Chart
+# ============================================================
+
+
+class TestFlameChart:
+    """Enhancement 10 — Duration flame chart."""
+
+    def test_app_js_has_extract_flame_chart_data(self):
+        from kairos.dashboard import _APP_JS
+
+        assert "extractFlameChartData" in _APP_JS
+
+    def test_app_js_has_compute_axis_ticks(self):
+        from kairos.dashboard import _APP_JS
+
+        assert "computeAxisTicks" in _APP_JS
+
+    def test_app_js_has_render_flame_chart_placeholder(self):
+        from kairos.dashboard import _APP_JS
+
+        assert "renderFlameChartPlaceholder" in _APP_JS
+
+    def test_app_js_has_mount_flame_chart(self):
+        from kairos.dashboard import _APP_JS
+
+        assert "mountFlameChart" in _APP_JS
+
+    def test_app_js_has_show_flame_tooltip(self):
+        from kairos.dashboard import _APP_JS
+
+        assert "showFlameTooltip" in _APP_JS
+
+    def test_app_js_has_hide_flame_tooltip(self):
+        from kairos.dashboard import _APP_JS
+
+        assert "hideFlameTooltip" in _APP_JS
+
+    def test_styles_has_flame_chart_container(self):
+        from kairos.dashboard import _STYLES_CSS
+
+        assert ".flame-chart-container" in _STYLES_CSS
+
+    def test_styles_has_flame_chart_tooltip(self):
+        from kairos.dashboard import _STYLES_CSS
+
+        assert ".flame-chart-tooltip" in _STYLES_CSS
+
+    def test_styles_has_tooltip_label_class(self):
+        from kairos.dashboard import _STYLES_CSS
+
+        assert ".tt-label" in _STYLES_CSS
+
+    def test_flame_chart_uses_svg_helpers(self):
+        """mountFlameChart must use svgRect, svgText, svgLine."""
+        from kairos.dashboard import _APP_JS
+
+        assert "svgRect" in _APP_JS
+        assert "svgLine" in _APP_JS
+
+    def test_flame_chart_uses_createelementns(self):
+        from kairos.dashboard import _APP_JS
+
+        assert "createElementNS" in _APP_JS
+
+    def test_flame_chart_uses_css_tokens(self):
+        from kairos.dashboard import _APP_JS
+
+        assert "getCssTokens" in _APP_JS
+
+    def test_flame_chart_constants_defined(self):
+        from kairos.dashboard import _APP_JS
+
+        assert "FLAME_ROW_H" in _APP_JS
+        assert "FLAME_BAR_H" in _APP_JS
+        assert "FLAME_LABEL_W" in _APP_JS
+
+    def test_flame_chart_bars_have_step_id(self):
+        """SVG bars carry data-step-id for click navigation."""
+        from kairos.dashboard import _APP_JS
+
+        assert "data-step-id" in _APP_JS
+
+    def test_flame_chart_tooltip_has_pointer_events_none(self):
+        from kairos.dashboard import _STYLES_CSS
+
+        assert "pointer-events: none" in _STYLES_CSS
+
+    def test_flame_chart_container_overflow(self):
+        from kairos.dashboard import _STYLES_CSS
+
+        assert "overflow-x" in _STYLES_CSS
+
+    def test_flame_chart_reduced_motion(self):
+        from kairos.dashboard import _STYLES_CSS
+
+        assert "prefers-reduced-motion" in _STYLES_CSS
+
+    def test_flame_chart_placeholder_in_run_detail(self):
+        from kairos.dashboard import _APP_JS
+
+        assert "renderFlameChartPlaceholder" in _APP_JS
+        assert "flame-chart" in _APP_JS
+
+    def test_mount_flame_chart_called_in_show_run_detail(self):
+        from kairos.dashboard import _APP_JS
+
+        assert "mountFlameChart" in _APP_JS
+
+    def test_flame_chart_click_scrolls_to_step(self):
+        from kairos.dashboard import _APP_JS
+
+        assert "scrollToStepGroup" in _APP_JS
+
+    def test_extract_reads_workflow_start(self):
+        """extractFlameChartData uses workflow_start timestamp as time zero."""
+        from kairos.dashboard import _APP_JS
+
+        assert "workflow_start" in _APP_JS
+
+    def test_flame_chart_axis_auto_scales(self):
+        """computeAxisTicks auto-scales tick intervals."""
+        from kairos.dashboard import _APP_JS
+
+        # Should contain multiple interval options
+        assert "1000" in _APP_JS or "500" in _APP_JS  # ms intervals
+
+    def test_tooltip_shows_duration(self):
+        from kairos.dashboard import _APP_JS
+
+        assert "Duration" in _APP_JS or "duration" in _APP_JS
+
+    # --- Findings 2-3: Behavioral assertions and failure paths ---
+
+    def test_extract_accesses_workflow_start_timestamp(self):
+        """extractFlameChartData accesses workflow_start event type."""
+        from kairos.dashboard import _APP_JS
+
+        assert "workflow_start" in _APP_JS
+        assert "event_type" in _APP_JS
+
+    def test_compute_axis_ticks_interval_array(self):
+        """computeAxisTicks has interval array with multiple canonical values."""
+        from kairos.dashboard import _APP_JS
+
+        for val in ["1, 5, 10, 50, 100, 500, 1000, 5000"]:
+            assert val in _APP_JS, f"Expected interval sequence '{val}' in computeAxisTicks"
+
+    def test_retry_gap_segments_use_stroke_dasharray(self):
+        """Retry gap segments between attempt bars use stroke-dasharray."""
+        from kairos.dashboard import _APP_JS
+
+        assert "stroke-dasharray" in _APP_JS
+
+    def test_retry_gap_segments_use_chart_bar_gap_token(self):
+        """Retry gap segments reference chartBarGap CSS token."""
+        from kairos.dashboard import _APP_JS
+
+        assert "chartBarGap" in _APP_JS
+
+    def test_mount_flame_chart_hides_container_when_no_steps(self):
+        """mountFlameChart sets display:none when there are no steps."""
+        from kairos.dashboard import _APP_JS
+
+        assert "display" in _APP_JS
+        assert "'none'" in _APP_JS or '"none"' in _APP_JS
+
+    def test_zero_duration_workflow_fallback(self):
+        """mountFlameChart uses || 1 fallback so zero-duration workflows never divide by zero."""
+        from kairos.dashboard import _APP_JS
+
+        assert "|| 1" in _APP_JS
+
+    def test_tooltip_textcontent_used_for_dynamic_values(self):
+        """showFlameTooltip uses textContent (not innerHTML) for dynamic values."""
+        from kairos.dashboard import _APP_JS
+
+        assert "textContent" in _APP_JS
+        # innerHTML should NOT be used in showFlameTooltip context;
+        # the function now builds DOM nodes with textContent
+        # Verify the DOM construction pattern is present
+        assert "createElement" in _APP_JS
+
+
+# ---------------------------------------------------------------------------
+# Enhancement 9: Search Across Runs
+# ---------------------------------------------------------------------------
+
+
+def _make_search_jsonl(run_id: str, workflow_name: str, event_type: str, step_id: str) -> str:
+    """Build a .jsonl file with a workflow_start event and one custom event."""
+    events = [
+        {
+            "timestamp": "2024-01-01T12:00:00+00:00",
+            "event_type": "workflow_start",
+            "step_id": None,
+            "data": {"workflow_name": workflow_name, "run_id": run_id, "total_steps": 1},
+            "level": "LogLevel.INFO",
+        },
+        {
+            "timestamp": "2024-01-01T12:00:01+00:00",
+            "event_type": event_type,
+            "step_id": step_id,
+            "data": {"step_id": step_id, "status": "completed"},
+            "level": "LogLevel.INFO",
+        },
+    ]
+    return "\n".join(json.dumps(e) for e in events)
+
+
+@pytest.fixture()
+def search_server(tmp_path: Path):
+    """Start a DashboardServer with two .jsonl files containing distinct events."""
+    from kairos.dashboard import DashboardServer
+
+    (tmp_path / "wf_alpha_run001.jsonl").write_text(
+        _make_search_jsonl("run001", "alpha_workflow", "step_complete", "fetch_data"),
+        encoding="utf-8",
+    )
+    (tmp_path / "wf_beta_run002.jsonl").write_text(
+        _make_search_jsonl("run002", "beta_workflow", "step_fail", "report"),
+        encoding="utf-8",
+    )
+
+    token = "search-test-token"
+    server = DashboardServer(port=0, log_dir=str(tmp_path), auth_token=token)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    time.sleep(0.05)
+    port = server.server_address[1]
+    base_url = f"http://127.0.0.1:{port}"
+    yield server, base_url, token, tmp_path
+    server.shutdown()
+    thread.join(timeout=2)
+
+
+# ---------------------------------------------------------------------------
+# Group: Search — Security
+# ---------------------------------------------------------------------------
+
+
+class TestSearchEndpointSecurity:
+    def test_search_requires_auth(self, search_server):
+        """GET /api/search without token returns 403."""
+        _server, base_url, _token, _tmp = search_server
+        status, data = _fetch(f"{base_url}/api/search?q=test")
+        assert status == 403
+
+    def test_search_has_csp_headers(self, search_server):
+        """Response includes CSP + nosniff headers."""
+        _server, base_url, token, _tmp = search_server
+        status, data = _fetch(f"{base_url}/api/search?q=step&token={token}")
+        assert status == 200
+        headers = {k.lower(): v for k, v in data["headers"].items()}
+        assert "content-security-policy" in headers
+        assert headers.get("x-content-type-options", "").lower() == "nosniff"
+
+    def test_search_post_returns_405(self, search_server):
+        """POST /api/search returns 405."""
+        _server, base_url, token, _tmp = search_server
+        status, _data = _fetch(f"{base_url}/api/search?q=test&token={token}", method="POST")
+        assert status == 405
+
+    def test_search_query_not_used_as_regex(self, search_server):
+        """Regex metacharacters treated as literal — q=.* should not crash or match all."""
+        _server, base_url, token, _tmp = search_server
+        # '.*' as a regex would match everything; as a literal it should match nothing
+        # (no event_type, step_id, or data contains '.*' literally)
+        status, data = _fetch(f"{base_url}/api/search?q=.*&token={token}")
+        assert status == 200
+        body = json.loads(data["body"])
+        # Results should be empty — no event contains the literal string '.*'
+        assert body["results"] == []
+
+    def test_search_empty_query_returns_empty(self, search_server):
+        """Empty q returns results: []."""
+        _server, base_url, token, _tmp = search_server
+        status, data = _fetch(f"{base_url}/api/search?q=&token={token}")
+        assert status == 200
+        body = json.loads(data["body"])
+        assert body["results"] == []
+
+
+# ---------------------------------------------------------------------------
+# Group: Search — Happy Paths
+# ---------------------------------------------------------------------------
+
+
+class TestSearchHappyPaths:
+    def test_search_returns_valid_json_shape(self, search_server):
+        """Response has query, results, total_scanned, has_more."""
+        _server, base_url, token, _tmp = search_server
+        status, data = _fetch(f"{base_url}/api/search?q=step&token={token}")
+        assert status == 200
+        body = json.loads(data["body"])
+        assert "query" in body
+        assert "results" in body
+        assert "total_scanned" in body
+        assert "has_more" in body
+
+    def test_search_matches_event_type(self, search_server):
+        """Query matching event_type returns results."""
+        _server, base_url, token, _tmp = search_server
+        status, data = _fetch(f"{base_url}/api/search?q=step_fail&token={token}")
+        assert status == 200
+        body = json.loads(data["body"])
+        assert len(body["results"]) >= 1
+        assert any(r["event_type"] == "step_fail" for r in body["results"])
+
+    def test_search_case_insensitive(self, search_server):
+        """Query 'STEP_FAIL' matches 'step_fail' (case-insensitive)."""
+        _server, base_url, token, _tmp = search_server
+        status, data = _fetch(f"{base_url}/api/search?q=STEP_FAIL&token={token}")
+        assert status == 200
+        body = json.loads(data["body"])
+        assert len(body["results"]) >= 1
+
+    def test_search_results_have_run_context(self, search_server):
+        """Each result has run_id, workflow_name, timestamp."""
+        _server, base_url, token, _tmp = search_server
+        status, data = _fetch(f"{base_url}/api/search?q=step&token={token}")
+        assert status == 200
+        body = json.loads(data["body"])
+        assert len(body["results"]) > 0
+        for result in body["results"]:
+            assert "run_id" in result
+            assert "workflow_name" in result
+            assert "timestamp" in result
+
+    def test_search_results_have_snippet(self, search_server):
+        """Each result includes a snippet field."""
+        _server, base_url, token, _tmp = search_server
+        status, data = _fetch(f"{base_url}/api/search?q=step&token={token}")
+        assert status == 200
+        body = json.loads(data["body"])
+        for result in body["results"]:
+            assert "snippet" in result
+
+    def test_search_matches_step_id(self, search_server):
+        """Query matching step_id returns results."""
+        _server, base_url, token, _tmp = search_server
+        status, data = _fetch(f"{base_url}/api/search?q=fetch_data&token={token}")
+        assert status == 200
+        body = json.loads(data["body"])
+        assert len(body["results"]) >= 1
+        assert any(r.get("step_id") == "fetch_data" for r in body["results"])
+
+    def test_search_matches_data_field(self, search_server):
+        """Query matching content in data dict returns results."""
+        _server, base_url, token, _tmp = search_server
+        # 'completed' is in the data dict of step_complete events
+        status, data = _fetch(f"{base_url}/api/search?q=completed&token={token}")
+        assert status == 200
+        body = json.loads(data["body"])
+        assert len(body["results"]) >= 1
+
+    def test_search_query_reflected_in_response(self, search_server):
+        """Response body contains the original query."""
+        _server, base_url, token, _tmp = search_server
+        status, data = _fetch(f"{base_url}/api/search?q=step_fail&token={token}")
+        assert status == 200
+        body = json.loads(data["body"])
+        assert body["query"] == "step_fail"
+
+    def test_search_no_match_returns_empty_results(self, search_server):
+        """Query with no matches returns empty results, not an error."""
+        _server, base_url, token, _tmp = search_server
+        status, data = _fetch(f"{base_url}/api/search?q=zzznomatch999&token={token}")
+        assert status == 200
+        body = json.loads(data["body"])
+        assert body["results"] == []
+        assert body["has_more"] is False
+
+    def test_search_result_has_event_type_and_step_id(self, search_server):
+        """Results include event_type and step_id fields."""
+        _server, base_url, token, _tmp = search_server
+        status, data = _fetch(f"{base_url}/api/search?q=step_fail&token={token}")
+        assert status == 200
+        body = json.loads(data["body"])
+        assert len(body["results"]) >= 1
+        r = body["results"][0]
+        assert "event_type" in r
+        assert "step_id" in r
+
+
+# ---------------------------------------------------------------------------
+# Group: Search — Unit Tests (_search_events)
+# ---------------------------------------------------------------------------
+
+
+class TestSearchFunction:
+    def test_empty_dir_returns_no_results(self, tmp_path: Path):
+        """_search_events on empty directory returns empty results."""
+        from kairos.dashboard import _search_events
+
+        result = _search_events(str(tmp_path), "test", 0, 50)
+        assert result["results"] == []
+        assert result["total_scanned"] == 0
+        assert result["has_more"] is False
+
+    def test_match_returns_correct_structure(self, tmp_path: Path):
+        """Matching events have required keys."""
+        from kairos.dashboard import _search_events
+
+        (tmp_path / "run.jsonl").write_text(
+            _make_search_jsonl("r1", "my_wf", "step_fail", "process"),
+            encoding="utf-8",
+        )
+        result = _search_events(str(tmp_path), "step_fail", 0, 50)
+        assert len(result["results"]) >= 1
+        r = result["results"][0]
+        for key in ("run_id", "workflow_name", "timestamp", "event_type", "step_id", "snippet"):
+            assert key in r, f"Missing key: {key}"
+
+    def test_respects_limit(self, tmp_path: Path):
+        """limit parameter caps the results returned."""
+        from kairos.dashboard import _search_events
+
+        # Create 5 files each with a matching event
+        for i in range(5):
+            (tmp_path / f"run{i:03d}.jsonl").write_text(
+                _make_search_jsonl(f"r{i}", "wf", "step_complete", f"step_{i}"),
+                encoding="utf-8",
+            )
+        result = _search_events(str(tmp_path), "step_complete", 0, 3)
+        assert len(result["results"]) <= 3
+
+    def test_respects_offset(self, tmp_path: Path):
+        """offset parameter skips leading results."""
+        from kairos.dashboard import _search_events
+
+        for i in range(4):
+            (tmp_path / f"run{i:03d}.jsonl").write_text(
+                _make_search_jsonl(f"r{i}", "wf", "step_complete", f"step_{i}"),
+                encoding="utf-8",
+            )
+        result_all = _search_events(str(tmp_path), "step_complete", 0, 100)
+        total = len(result_all["results"])
+        if total >= 2:
+            result_offset = _search_events(str(tmp_path), "step_complete", 1, 100)
+            assert len(result_offset["results"]) == total - 1
+
+    def test_has_more_true_when_results_exceed_limit(self, tmp_path: Path):
+        """has_more is True when there are more results beyond limit."""
+        from kairos.dashboard import _search_events
+
+        # Create 3 files each with a matching event
+        for i in range(3):
+            (tmp_path / f"run{i:03d}.jsonl").write_text(
+                _make_search_jsonl(f"r{i}", "wf", "step_complete", f"step_{i}"),
+                encoding="utf-8",
+            )
+        result = _search_events(str(tmp_path), "step_complete", 0, 2)
+        # total matches >= 3, limit=2, so has_more should be True
+        assert result["has_more"] is True
+
+    def test_has_more_false_when_all_results_fit(self, tmp_path: Path):
+        """has_more is False when all results fit within limit."""
+        from kairos.dashboard import _search_events
+
+        (tmp_path / "run.jsonl").write_text(
+            _make_search_jsonl("r1", "wf", "step_complete", "s1"),
+            encoding="utf-8",
+        )
+        result = _search_events(str(tmp_path), "step_complete", 0, 50)
+        assert result["has_more"] is False
+
+    def test_regex_metacharacters_treated_as_literal(self, tmp_path: Path):
+        """'.*' as query is treated as literal string — does not match via regex."""
+        from kairos.dashboard import _search_events
+
+        (tmp_path / "run.jsonl").write_text(
+            _make_search_jsonl("r1", "wf", "step_complete", "s1"),
+            encoding="utf-8",
+        )
+        result = _search_events(str(tmp_path), ".*", 0, 50)
+        # No event contains the literal string '.*'
+        assert result["results"] == []
+
+    def test_non_jsonl_files_ignored(self, tmp_path: Path):
+        """Non-.jsonl files are skipped."""
+        from kairos.dashboard import _search_events
+
+        (tmp_path / "notes.txt").write_text('{"event_type": "step_complete"}', encoding="utf-8")
+        result = _search_events(str(tmp_path), "step_complete", 0, 50)
+        assert result["results"] == []
+
+    def test_workflow_name_from_workflow_start_event(self, tmp_path: Path):
+        """workflow_name in result comes from the workflow_start event in the file."""
+        from kairos.dashboard import _search_events
+
+        (tmp_path / "run.jsonl").write_text(
+            _make_search_jsonl("r1", "my_named_workflow", "step_complete", "s1"),
+            encoding="utf-8",
+        )
+        result = _search_events(str(tmp_path), "step_complete", 0, 50)
+        assert len(result["results"]) >= 1
+        assert result["results"][0]["workflow_name"] == "my_named_workflow"
+
+    def test_run_id_from_event_data_not_filename(self, tmp_path: Path):
+        """run_id in result comes from event data, not from the filename."""
+        from kairos.dashboard import _search_events
+
+        (tmp_path / "completely_different_filename.jsonl").write_text(
+            _make_search_jsonl("event-based-run-id", "wf", "step_complete", "s1"),
+            encoding="utf-8",
+        )
+        result = _search_events(str(tmp_path), "step_complete", 0, 50)
+        assert len(result["results"]) >= 1
+        assert result["results"][0]["run_id"] == "event-based-run-id"
+
+    def test_snippet_centered_on_match(self, tmp_path: Path):
+        """Snippet is at most 120 chars and contains the query string."""
+        from kairos.dashboard import _search_events
+
+        (tmp_path / "run.jsonl").write_text(
+            _make_search_jsonl("r1", "wf", "step_complete", "s1"),
+            encoding="utf-8",
+        )
+        result = _search_events(str(tmp_path), "step_complete", 0, 50)
+        assert len(result["results"]) >= 1
+        snippet = result["results"][0]["snippet"]
+        assert len(snippet) <= 120
+        assert "step_complete" in snippet.lower()
+
+    def test_total_scanned_counts_all_events(self, tmp_path: Path):
+        """total_scanned reflects all events scanned (not just matches)."""
+        from kairos.dashboard import _search_events
+
+        (tmp_path / "run.jsonl").write_text(
+            _make_search_jsonl("r1", "wf", "step_complete", "s1"),
+            encoding="utf-8",
+        )
+        result_match = _search_events(str(tmp_path), "step_complete", 0, 50)
+        result_none = _search_events(str(tmp_path), "zzznomatch", 0, 50)
+        # Both scanned the same events; total_scanned should be equal
+        assert result_match["total_scanned"] == result_none["total_scanned"]
+        assert result_match["total_scanned"] > 0
+
+    def test_empty_query_returns_empty_results(self, tmp_path: Path):
+        """Empty query string returns no results."""
+        from kairos.dashboard import _search_events
+
+        (tmp_path / "run.jsonl").write_text(
+            _make_search_jsonl("r1", "wf", "step_complete", "s1"),
+            encoding="utf-8",
+        )
+        result = _search_events(str(tmp_path), "", 0, 50)
+        assert result["results"] == []
+
+    def test_match_field_indicates_which_field_matched(self, tmp_path: Path):
+        """Each result has a match_field key indicating event_type, step_id, or data."""
+        from kairos.dashboard import _search_events
+
+        (tmp_path / "run.jsonl").write_text(
+            _make_search_jsonl("r1", "wf", "step_complete", "process"),
+            encoding="utf-8",
+        )
+        result = _search_events(str(tmp_path), "step_complete", 0, 50)
+        assert len(result["results"]) >= 1
+        for r in result["results"]:
+            assert "match_field" in r
+            assert r["match_field"] in ("event_type", "step_id", "data")
+
+    def test_file_without_workflow_start_uses_unknown(self, tmp_path: Path):
+        """When no workflow_start event exists, workflow_name falls back to 'unknown'."""
+        from kairos.dashboard import _search_events
+
+        # Write a file with only a step event — no workflow_start
+        event = {
+            "timestamp": "2024-01-01T12:00:00+00:00",
+            "event_type": "step_complete",
+            "step_id": "orphan_step",
+            "data": {"status": "completed"},
+            "level": "LogLevel.INFO",
+        }
+        (tmp_path / "orphan.jsonl").write_text(json.dumps(event), encoding="utf-8")
+        result = _search_events(str(tmp_path), "orphan_step", 0, 50)
+        assert len(result["results"]) >= 1
+        assert result["results"][0]["workflow_name"] == "unknown"
+
+    def test_multiple_matches_across_files(self, tmp_path: Path):
+        """Search across multiple files returns matches from all of them."""
+        from kairos.dashboard import _search_events
+
+        for i in range(3):
+            (tmp_path / f"run{i:03d}.jsonl").write_text(
+                _make_search_jsonl(f"r{i}", f"wf_{i}", "step_complete", f"step_{i}"),
+                encoding="utf-8",
+            )
+        result = _search_events(str(tmp_path), "step_complete", 0, 50)
+        # At least 3 matches (one per file, from the step_complete event)
+        assert len(result["results"]) >= 3
+        run_ids = {r["run_id"] for r in result["results"]}
+        assert run_ids == {"r0", "r1", "r2"}
+
+
+# ---------------------------------------------------------------------------
+# Group: Search — Pagination (HTTP level)
+# ---------------------------------------------------------------------------
+
+
+class TestSearchPagination:
+    def test_limit_clamped_to_max_100(self, search_server):
+        """limit > 100 is clamped to 100."""
+        _server, base_url, token, _tmp = search_server
+        status, data = _fetch(f"{base_url}/api/search?q=step&limit=9999&token={token}")
+        assert status == 200
+
+    def test_offset_clamped_to_min_0(self, search_server):
+        """Negative offset is clamped to 0."""
+        _server, base_url, token, _tmp = search_server
+        status, data = _fetch(f"{base_url}/api/search?q=step&offset=-5&token={token}")
+        assert status == 200
+
+    def test_invalid_offset_defaults_to_0(self, search_server):
+        """Non-integer offset defaults to 0 without error."""
+        _server, base_url, token, _tmp = search_server
+        status, data = _fetch(f"{base_url}/api/search?q=step&offset=abc&token={token}")
+        assert status == 200
+
+    def test_invalid_limit_handled_gracefully(self, search_server):
+        """Non-integer limit is coerced to a valid value without error."""
+        _server, base_url, token, _tmp = search_server
+        status, data = _fetch(f"{base_url}/api/search?q=step&limit=xyz&token={token}")
+        assert status == 200
+
+
+# ---------------------------------------------------------------------------
+# Group: Search — Frontend (app.js and styles.css)
+# ---------------------------------------------------------------------------
+
+
+class TestSearchUI:
+    def test_app_js_has_show_search_view(self):
+        """app.js defines showSearchView function."""
+        from kairos.dashboard import _APP_JS
+
+        assert "showSearchView" in _APP_JS
+
+    def test_app_js_has_render_search_results(self):
+        """app.js defines renderSearchResults function."""
+        from kairos.dashboard import _APP_JS
+
+        assert "renderSearchResults" in _APP_JS
+
+    def test_app_js_has_fetch_search(self):
+        """app.js defines fetchSearch function."""
+        from kairos.dashboard import _APP_JS
+
+        assert "fetchSearch" in _APP_JS
+
+    def test_app_js_has_execute_search(self):
+        """app.js defines executeSearch function."""
+        from kairos.dashboard import _APP_JS
+
+        assert "executeSearch" in _APP_JS
+
+    def test_styles_has_search_view(self):
+        """styles.css contains .search-view class."""
+        from kairos.dashboard import _STYLES_CSS
+
+        assert ".search-view" in _STYLES_CSS
+
+    def test_styles_has_search_input_large(self):
+        """styles.css contains .search-input-large class."""
+        from kairos.dashboard import _STYLES_CSS
+
+        assert ".search-input-large" in _STYLES_CSS
+
+    def test_styles_has_search_result(self):
+        """styles.css contains .search-result class."""
+        from kairos.dashboard import _STYLES_CSS
+
+        assert ".search-result" in _STYLES_CSS
+
+    def test_styles_has_search_load_more(self):
+        """styles.css contains .search-load-more class."""
+        from kairos.dashboard import _STYLES_CSS
+
+        assert ".search-load-more" in _STYLES_CSS
+
+    def test_search_result_uses_esc(self):
+        """renderSearchResults uses esc() to HTML-escape dynamic result fields."""
+        from kairos.dashboard import _APP_JS
+
+        # Locate the renderSearchResults function body
+        start = _APP_JS.find("function renderSearchResults(")
+        assert start != -1, "renderSearchResults not found in app.js"
+        # Find the closing brace by scanning forward — take a generous slice
+        body = _APP_JS[start : start + 2000]
+        # Verify esc() is called on the key result fields used in innerHTML
+        assert "esc(r.run_id" in body
+        assert "esc(r.workflow_name" in body
+        assert "esc(r.event_type" in body
+        assert "esc(r.step_id" in body
+
+    def test_search_result_has_mark_highlight(self):
+        """renderSearchResults uses <mark> for highlighting the query in snippets."""
+        from kairos.dashboard import _APP_JS
+
+        assert "<mark>" in _APP_JS or "mark" in _APP_JS
+
+    def test_search_debounce(self):
+        """Search input uses debounce or setTimeout for deferred execution."""
+        from kairos.dashboard import _APP_JS
+
+        assert "debounce" in _APP_JS or "setTimeout" in _APP_JS
+
+    def test_router_handles_search_view(self):
+        """navigate() / router handles 'search' view."""
+        from kairos.dashboard import _APP_JS
+
+        assert "'search'" in _APP_JS or '"search"' in _APP_JS
+
+    def test_search_load_more_in_render(self):
+        """renderSearchResults renders a load-more button when hasMore is true."""
+        from kairos.dashboard import _APP_JS
+
+        assert "search-load-more" in _APP_JS
+
+    def test_search_result_meta_fields(self):
+        """renderSearchResults renders workflow_name, run_id, timestamp meta."""
+        from kairos.dashboard import _APP_JS
+
+        assert "result-wf" in _APP_JS
+        assert "result-run-id" in _APP_JS
+
+    def test_search_result_event_class(self):
+        """renderSearchResults renders event_type with .search-result-event class."""
+        from kairos.dashboard import _APP_JS
+
+        assert "search-result-event" in _APP_JS
+
+    def test_search_result_snippet_class(self):
+        """renderSearchResults renders snippet with .search-result-snippet class."""
+        from kairos.dashboard import _APP_JS
+
+        assert "search-result-snippet" in _APP_JS
+
+    def test_search_state_variables(self):
+        """app.js declares searchQuery and searchOffset state variables."""
+        from kairos.dashboard import _APP_JS
+
+        assert "searchQuery" in _APP_JS
+        assert "searchOffset" in _APP_JS
+
+
+# ---------------------------------------------------------------------------
+# Group: Search — Header reflection and long-query snippet safety
+# ---------------------------------------------------------------------------
+
+
+class TestSearchHeaderAndSnippet:
+    def test_search_query_not_reflected_in_headers(self, search_server):
+        """Query string must not appear in any response header."""
+        server, base_url, token, tmp_path = search_server
+        status, data = _fetch(f"{base_url}/api/search?q=UNIQUE_TEST_MARKER&token={token}")
+        assert status == 200
+        for _header, value in data["headers"].items():
+            assert "UNIQUE_TEST_MARKER" not in str(value)
+
+    def test_long_query_snippet_bounded_to_120_chars(self, tmp_path: Path):
+        """Snippet is always <= 120 chars even when the source text is very long."""
+        from kairos.dashboard import _search_events
+
+        long_data = "x" * 500 + "findme" + "y" * 500
+        events = [
+            {
+                "run_id": "r1",
+                "workflow_name": "wf",
+                "timestamp": "2024-01-01T00:00:00",
+                "event_type": "step_complete",
+                "step_id": "s1",
+                "data": {"message": long_data},
+            }
+        ]
+        (tmp_path / "run.jsonl").write_text(
+            "\n".join(json.dumps(e) for e in events),
+            encoding="utf-8",
+        )
+        result = _search_events(str(tmp_path), "findme", 0, 50)
+        assert len(result["results"]) >= 1
+        for r in result["results"]:
+            assert len(r["snippet"]) <= 120

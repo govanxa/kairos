@@ -1092,17 +1092,36 @@ kairos dashboard --log-dir ./logs --no-auth
 
 **Run list** — A filterable table of all past runs with status badges (green/red/gray), step counts, duration, and timestamps. Filter by status (Complete/Failed/Incomplete), workflow name, or free-text search. A "Showing X of Y runs" counter updates as you filter. Select two runs via checkboxes and click "Compare" for a side-by-side diff. Click any row to drill into the detail view.
 
+**Search across runs** — Full-text search across all `.jsonl` log files. Press `/` to focus the search input and type your query. Results show matching events with run context (workflow name, step, event type) and highlighted match text. "Load more" pagination handles large result sets. Click any result to jump to that run's detail view.
+
 **Run detail** — A summary grid (status, workflow name, duration, steps completed) plus a step-grouped timeline. Events are grouped by step into collapsible sections with status badges, durations, and event counts. Failed groups auto-expand so problems are visible immediately. Click any event row to expand and see the full JSON data with syntax coloring (cyan keys, green strings, amber numbers). Workflow-level events appear outside groups.
 
-**Step dependency graph** — An interactive SVG DAG at the top of the run detail view. Nodes are color-coded by step status (green/complete, red/failed, gray/skipped, blue/running). Hover a node to highlight connected edges. Click a node to scroll to that step's group in the timeline. Steps with foreach fan-out show a badge with the item count.
+**Duration flame chart** — A Gantt-style SVG timeline at the top of the run detail view showing step execution over time. Status-colored bars per step, retry gap segments with dashed borders, hover tooltips showing timing details, and click-to-scroll navigation. Auto-scaled axis ticks adapt to workflow duration.
 
-**Step inspector** — Click the "Inspect" button on any step group header to open a tabbed panel showing Input, Output, and Validation data. Data is displayed as formatted JSON. If data was not captured (requires `--verbose` logging), the panel shows a context-specific message explaining what is missing and how to capture it.
+**Step dependency graph** — An interactive SVG DAG in the run detail view. Nodes are color-coded by step status (green/complete, red/failed, gray/skipped, blue/running). Hover a node to highlight connected edges. Click a node to scroll to that step's group in the timeline. Steps with foreach fan-out show a badge with the item count.
+
+**Step inspector** — Click the "Inspect" button on any step group header to open a tabbed panel showing Input, Output, and Validation data. Data is displayed as formatted JSON. The Validation tab shows a structured field-by-field table (Status, Field, Validator, Expected, Actual) with failed fields sorted to top and expandable error messages. If data was not captured (requires `--verbose` logging), the panel shows a context-specific message explaining what is missing and how to capture it.
+
+**Retry timeline** — Steps with multiple attempts display a horizontal card chain showing attempt progression. Each card shows attempt number, status icon, and duration. Connector arrows between cards show backoff delay. Click a failed card to see the full sanitized retry context with syntax coloring.
 
 **Export** — Three export actions in the run detail header: "Download JSON" (full run data), "Download CSV" (event timeline as spreadsheet-ready CSV), and "Copy API URL" (authenticated API URL for scripting).
 
 **Run comparison** — Select exactly two runs in the run list via checkboxes, then click "Compare." A side-by-side view shows status changes (with arrows), duration deltas, and step presence/absence. Steps that exist in one run but not the other are highlighted.
 
 **Auto-refresh** — Toggle live mode via the header button (pulsing green dot when active). Choose an interval (2s/5s/10s/30s). New runs appear in the filtered table automatically. Auto-refresh pauses when viewing a run detail page.
+
+**Keyboard shortcuts** — Navigate the dashboard without a mouse. Press `?` to see all shortcuts:
+
+| Key | Action | Context |
+|-----|--------|---------|
+| `j` / `k` | Move down / up in run list | Run list |
+| `Enter` | Open selected run | Run list |
+| `Escape` | Go back to run list | Run detail, diff, search |
+| `/` | Focus search input | Any view |
+| `r` | Toggle auto-refresh | Any view |
+| `e` | Expand/collapse all step groups | Run detail |
+| `1` / `2` / `3` | Switch inspector tabs (Input/Output/Validation) | Inspector open |
+| `?` | Show/hide shortcuts overlay | Any view |
 
 ### API endpoints
 
@@ -1120,6 +1139,9 @@ curl -o run.json "http://127.0.0.1:8420/api/runs/RUN_ID/export/json?token=YOUR_T
 
 # Export run events as CSV
 curl -o run.csv "http://127.0.0.1:8420/api/runs/RUN_ID/export/csv?token=YOUR_TOKEN"
+
+# Search across all runs
+curl "http://127.0.0.1:8420/api/search?q=validation+failed&token=YOUR_TOKEN"
 
 # Health check (no auth required)
 curl "http://127.0.0.1:8420/api/health"

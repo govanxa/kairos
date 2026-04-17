@@ -251,6 +251,117 @@ def _list_runs(log_dir: str) -> list[dict[str, object]]:
     return runs
 
 
+def _search_events(
+    log_dir: str,
+    query: str,
+    offset: int,
+    limit: int,
+) -> dict[str, object]:
+    """Search for events matching *query* across all .jsonl files in *log_dir*.
+
+    Matching is performed using Python's ``in`` operator on lowercased strings.
+    The query is NEVER passed to re.search(), dynamic code execution, or used as a file path.
+
+    Args:
+        log_dir: Directory containing .jsonl run log files.
+        query: Literal search string. Empty query returns no results.
+        offset: Number of matching events to skip (clamped 0–10000).
+        limit: Maximum number of results to return (clamped 1–100).
+
+    Returns:
+        Dict with keys ``results`` (list), ``total_scanned`` (int),
+        ``has_more`` (bool), and ``query`` (str).
+    """
+    if not query:
+        return {"query": query, "results": [], "total_scanned": 0, "has_more": False}
+
+    query_lower = query.lower()
+    dir_path = Path(log_dir)
+    all_matches: list[dict[str, object]] = []
+    total_scanned: int = 0
+
+    for file_path in _list_jsonl_files(dir_path):
+        events = _read_events(file_path)
+
+        # Extract workflow_name and run_id from the workflow_start event in this file
+        file_workflow_name: str = "unknown"
+        file_run_id: str = ""
+        for ev in events:
+            if ev.get("event_type") == "workflow_start":
+                raw_data = ev.get("data")
+                if isinstance(raw_data, dict):
+                    d = cast(dict[str, object], raw_data)
+                    file_workflow_name = str(d.get("workflow_name", "unknown"))
+                    file_run_id = str(d.get("run_id", ""))
+                break
+
+        for event in events:
+            total_scanned += 1
+            event_type = str(event.get("event_type", ""))
+            step_id = str(event.get("step_id", "") if event.get("step_id") is not None else "")
+            raw_data = event.get("data", {})
+            data_str = json.dumps(raw_data) if isinstance(raw_data, dict) else ""
+
+            # Determine which field matched (literal `in` operator only)
+            matched_field: str | None = None
+            if query_lower in event_type.lower():
+                matched_field = "event_type"
+            elif query_lower in step_id.lower():
+                matched_field = "step_id"
+            elif query_lower in data_str.lower():
+                matched_field = "data"
+
+            if matched_field is None:
+                continue
+
+            # Build snippet: up to 120 chars centered on the match position
+            if matched_field == "event_type":
+                source_text = event_type
+            elif matched_field == "step_id":
+                source_text = step_id
+            else:
+                source_text = data_str
+
+            idx = source_text.lower().find(query_lower)
+            half = 60
+            start = max(0, idx - half)
+            end = min(len(source_text), idx + len(query_lower) + half)
+            snippet = source_text[start:end]
+            if len(snippet) > 120:
+                snippet = snippet[:120]
+
+            # Use event's own run_id if available, else fall back to file-level run_id
+            run_id_val: str = file_run_id
+            raw_ev_data = event.get("data")
+            if isinstance(raw_ev_data, dict):
+                ev_rid = cast(dict[str, object], raw_ev_data).get("run_id")
+                if ev_rid:
+                    run_id_val = str(ev_rid)
+
+            all_matches.append(
+                {
+                    "run_id": run_id_val,
+                    "workflow_name": file_workflow_name,
+                    "timestamp": str(event.get("timestamp", "")),
+                    "event_type": event_type,
+                    "step_id": step_id if step_id else None,
+                    "snippet": snippet,
+                    "match_field": matched_field,
+                }
+            )
+
+    total_found = len(all_matches)
+    paginated = all_matches[offset : offset + limit]
+    has_more = (offset + limit) < total_found
+
+    return {
+        "query": query,
+        "results": paginated,
+        "total_scanned": total_scanned,
+        "has_more": has_more,
+    }
+
+
 def _get_run_events(log_dir: str, run_id: str) -> list[dict[str, object]] | None:
     """Find and return all events for a specific run_id.
 
@@ -560,6 +671,38 @@ class DashboardHandler(BaseHTTPRequestHandler):
         body = csv_str.encode("utf-8")
         self._send_download(body, "text/csv; charset=utf-8", f"run_{run_id}.csv")
 
+    def _handle_api_search(self) -> None:
+        """Search events across all runs (GET /api/search).
+
+        Query parameters:
+            q: Literal search string (default empty — returns no results).
+            offset: int, clamped 0–10000 (default 0).
+            limit: int, clamped 1–100 (default 50).
+
+        Security: query is used ONLY with Python ``in`` operator — never
+        re.search(), dynamic code execution, or as a file path (S17).
+        """
+        server = cast("DashboardServer", self.server)
+        parsed = urllib.parse.urlparse(self.path)
+        params = urllib.parse.parse_qs(parsed.query)
+
+        query = (params.get("q") or [""])[0]
+
+        try:
+            offset = int((params.get("offset") or ["0"])[0])
+        except (ValueError, IndexError):
+            offset = 0
+        offset = max(0, min(offset, 10000))
+
+        try:
+            limit = int((params.get("limit") or ["50"])[0])
+        except (ValueError, IndexError):
+            limit = 50
+        limit = max(1, min(limit, 100))
+
+        result = _search_events(server.log_dir, query, offset, limit)
+        self._send_json(result)
+
     def _handle_api_health(self) -> None:
         """Health check — no authentication required (GET /api/health)."""
         self._send_json({"status": "ok"})
@@ -598,6 +741,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
         match path:
             case "/":
                 self._handle_index()
+            case "/api/search":
+                self._handle_api_search()
             case "/api/runs":
                 self._handle_api_runs()
             case _ if path.startswith("/api/runs/"):

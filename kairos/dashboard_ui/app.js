@@ -21,6 +21,12 @@
   let openInspectorStepId = null;   // currently open inspector step_id, or null
   let currentRunEvents = [];        // events for currently viewed run detail
   let selectedRuns = [];            // run_id strings selected for diff (max 2)
+  let shortcutsOverlayVisible = false;
+  let selectedRunIndex = -1;        // -1 = no run selected in run-list
+  let searchQuery = '';             // current search query string
+  let searchResults = [];           // accumulated search results
+  let searchHasMore = false;        // whether more results are available
+  let searchOffset = 0;             // current pagination offset
 
   // ============================================================
   // === Constants ===
@@ -37,7 +43,9 @@
   const TOKEN = params.get('token') || '';
 
   function apiUrl(path) {
-    return TOKEN ? path + '?token=' + encodeURIComponent(TOKEN) : path;
+    if (!TOKEN) return path;
+    var separator = path.indexOf('?') >= 0 ? '&' : '?';
+    return path + separator + 'token=' + encodeURIComponent(TOKEN);
   }
 
   async function fetchJson(path) {
@@ -52,6 +60,21 @@
 
   async function fetchRunDetail(runId) {
     return fetchJson('/api/runs/' + encodeURIComponent(runId));
+  }
+
+  /**
+   * Call GET /api/search?q=<query>&offset=<offset>&limit=50
+   * Returns the parsed JSON response.
+   *
+   * @param {string} query - Literal search string.
+   * @param {number} offset - Pagination offset.
+   * @returns {Promise<object>} - { query, results, total_scanned, has_more }
+   */
+  async function fetchSearch(query, offset) {
+    var path = '/api/search?q=' + encodeURIComponent(query) +
+               '&offset=' + encodeURIComponent(offset) +
+               '&limit=50';
+    return fetchJson(path);
   }
 
   // ============================================================
@@ -272,6 +295,11 @@
       skippedText:  t('--color-skipped-text')    || '#94a3b8',
       runningText:  t('--color-running-text')    || '#a5b4fc',
       fontMono:     t('--font-mono')             || 'monospace',
+      fontUi:       t('--font-ui')               || '-apple-system, BlinkMacSystemFont, "Segoe UI", Inter, sans-serif',
+      textFaint:    t('--text-faint')            || '#475569',
+      chartGrid:    t('--chart-grid')            || '#1e293b',
+      chartAxis:    t('--chart-axis')            || '#475569',
+      chartBarGap:  t('--chart-bar-gap')         || '#334155',
     };
     return _cssTokenCache;
   }
@@ -864,6 +892,15 @@
           } catch (e) { /* ignore */ }
         }
 
+        // Detect retries: step has step_retry events or multiple step_start events
+        const retryEventCount = group.events.filter(function (e) {
+          return e.event_type === 'step_retry';
+        }).length;
+        const startEventCount = group.events.filter(function (e) {
+          return e.event_type === 'step_start';
+        }).length;
+        const hasRetries = retryEventCount > 0 || startEventCount > 1;
+
         html +=
           '<li class="step-group">' +
           '<div class="' + headerClass + '" data-step-id="' + esc(stepId) + '">' +
@@ -874,6 +911,7 @@
           '<span class="group-count">(' + group.events.length + ' events)</span>' +
           '<button class="inspect-btn" data-inspect-step="' + esc(stepId) + '" aria-label="Inspect step ' + esc(stepId) + '">' + iconInspect() + ' Inspect</button>' +
           '</div>' +
+          (hasRetries ? renderRetryTimelinePlaceholder(stepId) : '') +
           '<ul class="' + eventsClass + '">';
         for (const evt of group.events) {
           html += renderEventRow(evt, 'step-' + stepId);
@@ -925,6 +963,434 @@
   }
 
   // ============================================================
+  // === Retry Timeline (Enhancement 11) ===
+  // ============================================================
+
+  // Card and connector layout constants
+  var RETRY_CARD_W = 120;
+  var RETRY_CARD_H = 80;
+  var RETRY_CARD_GAP = 60;  // horizontal gap between cards (space for arrow + backoff label)
+  var RETRY_CARD_RX = 6;
+
+  /**
+   * Group run events by step attempt into an array of attempt records.
+   *
+   * @param {string} stepId
+   * @param {Array} events
+   * @returns {Array} Array of {attempt, status, durationMs, error, backoffMs, retryContext}
+   */
+  function extractRetryAttempts(stepId, events) {
+    var stepEvents = events.filter(function (e) { return e.step_id === stepId; });
+
+    // Collect attempt numbers from step_start events (each retry produces a new step_start)
+    var attempts = [];
+    var currentAttempt = null;
+
+    stepEvents.forEach(function (e) {
+      var et = e.event_type || '';
+      var data = e.data || {};
+
+      if (et === 'step_start') {
+        // Start a new attempt record
+        currentAttempt = {
+          attempt: (data.attempt || attempts.length + 1),
+          status: 'running',
+          startTs: e.timestamp,
+          endTs: null,
+          durationMs: null,
+          error: null,
+          backoffMs: null,
+          retryContext: null,
+        };
+        attempts.push(currentAttempt);
+      } else if (et === 'step_complete' && currentAttempt) {
+        currentAttempt.status = 'complete';
+        currentAttempt.endTs = e.timestamp;
+        if (currentAttempt.startTs && currentAttempt.endTs) {
+          var ms = new Date(currentAttempt.endTs) - new Date(currentAttempt.startTs);
+          if (!isNaN(ms)) currentAttempt.durationMs = ms;
+        }
+        // Also read duration from event data if present
+        if (data.duration_ms != null) currentAttempt.durationMs = data.duration_ms;
+      } else if (et === 'step_fail' && currentAttempt) {
+        currentAttempt.status = 'failed';
+        currentAttempt.endTs = e.timestamp;
+        if (currentAttempt.startTs && currentAttempt.endTs) {
+          var ms2 = new Date(currentAttempt.endTs) - new Date(currentAttempt.startTs);
+          if (!isNaN(ms2)) currentAttempt.durationMs = ms2;
+        }
+        if (data.error_type) currentAttempt.error = data.error_type;
+        else if (data.error) currentAttempt.error = String(data.error).slice(0, 30);
+      } else if (et === 'step_retry') {
+        // Backoff and retry context come in step_retry events
+        if (currentAttempt) {
+          currentAttempt.backoffMs = data.backoff_ms || data.delay_ms || null;
+          currentAttempt.retryContext = data.retry_context || data.context || null;
+        }
+      }
+    });
+
+    return attempts;
+  }
+
+  /**
+   * Return an HTML placeholder div for the retry timeline SVG.
+   * The SVG is mounted separately via mountRetryTimeline after the DOM is ready.
+   *
+   * @param {string} stepId
+   * @returns {string} HTML string
+   */
+  function renderRetryTimelinePlaceholder(stepId) {
+    return '<div class="retry-timeline-container" id="retry-' + esc(stepId) + '"></div>';
+  }
+
+  /**
+   * Build and mount the retry timeline SVG inside the placeholder container.
+   * Must be called after the container element is in the DOM.
+   *
+   * @param {string} stepId
+   * @param {Array} events — full event list for the run
+   */
+  function mountRetryTimeline(stepId, events) {
+    var container = document.getElementById('retry-' + stepId);
+    if (!container) return;
+
+    var attempts = extractRetryAttempts(stepId, events);
+    if (attempts.length < 2) {
+      // Single attempt — no timeline needed; hide the container
+      container.style.display = 'none';
+      return;
+    }
+
+    var tokens = getCssTokens();
+    var n = attempts.length;
+    var svgWidth = n * RETRY_CARD_W + (n - 1) * RETRY_CARD_GAP + 16;
+    var svgHeight = RETRY_CARD_H + 32;  // padding above/below cards
+
+    var svg = svgEl('svg', {
+      width: svgWidth,
+      height: svgHeight,
+      viewBox: '0 0 ' + svgWidth + ' ' + svgHeight,
+      role: 'img',
+      'aria-label': 'Retry timeline for step ' + stepId,
+    });
+
+    // <defs> for arrowhead marker
+    var defs = svgEl('defs');
+    var markerId = 'retry-arrow-' + stepId.replace(/[^a-zA-Z0-9_-]/g, '_');
+    defs.appendChild(svgArrowMarker(markerId, tokens.edge));
+    svg.appendChild(defs);
+
+    var cardY = 16;  // vertical offset — leaves room above card for nothing, below for backoff label
+
+    attempts.forEach(function (att, i) {
+      var cardX = i * (RETRY_CARD_W + RETRY_CARD_GAP);
+
+      // Status-dependent border color
+      var borderColor;
+      if (att.status === 'complete' || att.status === 'completed') {
+        borderColor = tokens.success;
+      } else if (att.status === 'failed') {
+        borderColor = tokens.error;
+      } else {
+        borderColor = tokens.edge;
+      }
+
+      // Card group — data-attempt and data-step-id for event delegation
+      var g = svgEl('g', {
+        class: 'retry-card',
+        'data-attempt': att.attempt,
+        'data-step-id': stepId,
+        tabindex: '0',
+        role: 'button',
+        'aria-label': 'Attempt ' + att.attempt + ' — ' + att.status,
+        style: 'cursor: pointer;',
+      });
+
+      // Card background rect
+      g.appendChild(svgRect(cardX, cardY, RETRY_CARD_W, RETRY_CARD_H, RETRY_CARD_RX,
+        tokens.nodeBg, borderColor, 2));
+
+      // Attempt number — semibold, 12px, UI font
+      g.appendChild(svgText(cardX + RETRY_CARD_W / 2, cardY + 16, 'Attempt ' + att.attempt, {
+        anchor: 'middle',
+        baseline: 'middle',
+        fontSize: 12,
+        fontFamily: tokens.fontUi,
+        fontWeight: '600',
+        fill: tokens.textPrimary,
+      }));
+
+      // Status icon + duration — 11px
+      var icon2 = att.status === 'complete' || att.status === 'completed' ? '\u2713' :
+                  att.status === 'failed' ? '\u2717' : '\u25b6';
+      var durStr = att.durationMs != null ? fmtDuration(att.durationMs) : att.status;
+      g.appendChild(svgText(cardX + RETRY_CARD_W / 2, cardY + 38, icon2 + '  ' + durStr, {
+        anchor: 'middle',
+        baseline: 'middle',
+        fontSize: 11,
+        fontFamily: tokens.fontMono,
+        fontWeight: 'normal',
+        fill: att.status === 'failed' ? tokens.errorText :
+              (att.status === 'complete' || att.status === 'completed') ? tokens.successText :
+              tokens.textMuted,
+      }));
+
+      // Error text (failed cards only) — truncated to 15 chars, 11px
+      if (att.error) {
+        var errStr = att.error.length > 15 ? att.error.slice(0, 14) + '\u2026' : att.error;
+        g.appendChild(svgText(cardX + RETRY_CARD_W / 2, cardY + 58, errStr, {
+          anchor: 'middle',
+          baseline: 'middle',
+          fontSize: 11,
+          fontFamily: tokens.fontMono,
+          fontWeight: 'normal',
+          fill: tokens.errorText,
+        }));
+      }
+
+      svg.appendChild(g);
+
+      // Connector arrow to next card (not after the last card)
+      if (i < n - 1) {
+        var lineX1 = cardX + RETRY_CARD_W;
+        var lineX2 = cardX + RETRY_CARD_W + RETRY_CARD_GAP;
+        var lineY = cardY + RETRY_CARD_H / 2;
+
+        var line = svgLine(lineX1, lineY, lineX2 - 6, lineY, tokens.edge);
+        line.setAttribute('marker-end', 'url(#' + markerId + ')');
+        svg.appendChild(line);
+
+        // Backoff label below the connector line
+        var backoffLabel = att.backoffMs != null
+          ? fmtDuration(att.backoffMs) + ' backoff'
+          : '';
+        if (backoffLabel) {
+          svg.appendChild(svgText(lineX1 + RETRY_CARD_GAP / 2, lineY + 14, backoffLabel, {
+            anchor: 'middle',
+            baseline: 'middle',
+            fontSize: 11,
+            fontFamily: tokens.fontMono,
+            fontWeight: 'normal',
+            fill: tokens.textFaint,
+          }));
+        }
+      }
+    });
+
+    container.appendChild(svg);
+
+    // Event delegation: click on a retry card to expand/collapse context
+    svg.addEventListener('click', function (e) {
+      var card = e.target.closest('.retry-card');
+      if (!card) return;
+      var attemptNum = card.getAttribute('data-attempt');
+      var stepIdAttr = card.getAttribute('data-step-id');
+      var contextId = 'retry-ctx-' + esc(stepIdAttr) + '-' + attemptNum;
+      var existing = document.getElementById(contextId);
+
+      if (existing) {
+        // Toggle visibility
+        if (existing.style.display === 'none') {
+          existing.style.display = '';
+        } else {
+          existing.style.display = 'none';
+        }
+        return;
+      }
+
+      // Find the attempt record
+      var attRecord = attempts.find(function (a) {
+        return String(a.attempt) === String(attemptNum);
+      });
+      if (!attRecord) return;
+
+      // Build context object to display
+      var contextData = {
+        attempt: attRecord.attempt,
+        status: attRecord.status,
+        duration_ms: attRecord.durationMs,
+        error: attRecord.error,
+        backoff_ms: attRecord.backoffMs,
+        retry_context: attRecord.retryContext,
+      };
+
+      var ctxDiv = document.createElement('div');
+      ctxDiv.className = 'retry-expanded-context';
+      ctxDiv.id = contextId;
+      ctxDiv.innerHTML = '<pre>' + colorizeJson(contextData, 0, 0) + '</pre>';
+      container.appendChild(ctxDiv);
+    });
+  }
+
+  // ============================================================
+  // === Validation Detail Panel (Enhancement 12) ===
+  // ============================================================
+
+  /**
+   * SVG checkmark icon (14×14) — used in validation pass rows.
+   * @returns {string} SVG element string
+   */
+  function iconCheckmark() {
+    return '<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor"' +
+      ' stroke-width="2"><path d="M3 8l3 3 7-7"/></svg>';
+  }
+
+  /**
+   * SVG X mark icon (12×12) — used in validation fail rows.
+   * @returns {string} SVG element string
+   */
+  function iconXMark() {
+    return '<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor"' +
+      ' stroke-width="2"><path d="M4 4l8 8M12 4l-8 8"/></svg>';
+  }
+
+  /**
+   * Parse validation events and extract structured field-level data.
+   *
+   * Looks for event.data.errors (list of {field, expected, actual, message})
+   * and event.data.fields_checked (total field count) in validation events.
+   *
+   * @param {Array} validationEvts — array of validation event objects
+   * @returns {{errors: Array, allFields: Array, failCount: number, totalCount: number}}
+   */
+  function extractValidationData(validationEvts) {
+    var errors = [];
+    var allFields = [];
+    var failCount = 0;
+    var totalCount = 0;
+
+    validationEvts.forEach(function (evt) {
+      var data = evt && evt.data ? evt.data : {};
+
+      // Collect errors from the errors array
+      if (Array.isArray(data.errors)) {
+        data.errors.forEach(function (err) {
+          errors.push({
+            field: err.field || '',
+            validator: err.validator || err.constraint || '',
+            expected: err.expected !== undefined ? String(err.expected) : '',
+            actual: err.actual !== undefined ? String(err.actual) : '',
+            message: err.message || ''
+          });
+        });
+        failCount += data.errors.length;
+      }
+
+      // Collect all checked fields
+      if (Array.isArray(data.fields_checked)) {
+        data.fields_checked.forEach(function (f) {
+          allFields.push({
+            field: f.field || f,
+            expected: f.expected !== undefined ? String(f.expected) : '',
+            actual: f.actual !== undefined ? String(f.actual) : '',
+            passed: f.passed !== false
+          });
+        });
+        totalCount += data.fields_checked.length;
+      } else if (typeof data.fields_checked === 'number') {
+        totalCount += data.fields_checked;
+      }
+
+      // Fallback: total_fields_checked numeric key
+      if (typeof data.total_fields_checked === 'number' && totalCount === 0) {
+        totalCount = data.total_fields_checked;
+      }
+    });
+
+    // Deduplicate allFields by field name
+    var seen = {};
+    allFields = allFields.filter(function (f) {
+      if (seen[f.field]) return false;
+      seen[f.field] = true;
+      return true;
+    });
+
+    // If no totalCount was supplied, derive from errors + passing fields
+    if (totalCount === 0) {
+      totalCount = failCount + allFields.filter(function (f) { return f.passed; }).length;
+    }
+
+    return { errors: errors, allFields: allFields, failCount: failCount, totalCount: totalCount };
+  }
+
+  /**
+   * Render a structured validation results table.
+   *
+   * Failed fields sort to top with error background. Each failed row has an
+   * expandable detail row. Passing fields shown below with success tint.
+   * Falls back gracefully when allFields is empty.
+   *
+   * @param {Array} errors — array of {field, expected, actual, message}
+   * @param {Array} allFields — array of {field, expected, actual, passed}
+   * @returns {string} HTML string for the validation detail panel
+   */
+  function renderValidationTable(errors, allFields) {
+    var failCount = errors.length;
+
+    // Build a set of failed field names for lookup
+    var failedNames = {};
+    errors.forEach(function (e) { failedNames[e.field] = true; });
+
+    // Passing fields: from allFields where not in errors
+    var passingFields = allFields.filter(function (f) { return !failedNames[f.field]; });
+
+    var totalCount = failCount + passingFields.length;
+
+    var rows = '';
+
+    // --- Failed rows first ---
+    errors.forEach(function (err) {
+      var validatorDisplay = err.validator ? esc(err.validator) : '\u2014';
+      rows +=
+        '<tr class="validation-row validation-row-fail" data-val-field="' + esc(err.field) + '"' +
+        ' aria-expanded="false">' +
+        '<td class="validation-status-icon">' + iconXMark() + '</td>' +
+        '<td class="validation-field-name">' + esc(err.field) + '</td>' +
+        '<td>' + validatorDisplay + '</td>' +
+        '<td>' + esc(err.expected) + '</td>' +
+        '<td>' + esc(err.actual) + '</td>' +
+        '</tr>' +
+        '<tr class="validation-expandable" data-val-expand="' + esc(err.field) + '">' +
+        '<td colspan="5"><pre>' +
+        colorizeJson({ field: err.field, expected: err.expected, actual: err.actual,
+          message: err.message }, 0, 0) +
+        '</pre></td>' +
+        '</tr>';
+    });
+
+    // --- Passing rows after ---
+    passingFields.forEach(function (f) {
+      rows +=
+        '<tr class="validation-row validation-row-pass">' +
+        '<td class="validation-status-icon">' + iconCheckmark() + '</td>' +
+        '<td class="validation-field-name">' + esc(f.field) + '</td>' +
+        '<td>\u2014</td>' +
+        '<td>' + esc(f.expected) + '</td>' +
+        '<td>' + esc(f.actual) + '</td>' +
+        '</tr>';
+    });
+
+    var footer = failCount + ' of ' + totalCount + ' fields failed';
+
+    return (
+      '<div class="validation-detail">' +
+      '<table class="validation-table">' +
+      '<thead><tr>' +
+      '<th scope="col" class="validation-status-icon"></th>' +
+      '<th scope="col">Field</th>' +
+      '<th scope="col">Validator</th>' +
+      '<th scope="col">Expected</th>' +
+      '<th scope="col">Actual</th>' +
+      '</tr></thead>' +
+      '<tbody>' + rows + '</tbody>' +
+      '</table>' +
+      '<div class="validation-footer">' + footer + '</div>' +
+      '</div>'
+    );
+  }
+
+  // ============================================================
   // === Inspector Panel (Enhancement 8) ===
   // ============================================================
 
@@ -963,13 +1429,20 @@
         ? verbosityMsg
         : '<div class="inspector-empty">Step did not complete.</div>');
 
-    // Validation tab content — distinguish "no contract" from "not captured"
+    // Validation tab content — use structured table when field data is available,
+    // otherwise fall back to raw JSON display. Distinguish "no contract" from
+    // "not captured at this verbosity level".
     var validationHtml;
     if (validationEvts.length > 0) {
-      validationHtml = '<pre>' + colorizeJson(
-        validationEvts.map(function (e) { return e.data || {}; }),
-        0, 0
-      ) + '</pre>';
+      var valData = extractValidationData(validationEvts);
+      if (valData.errors.length > 0 || valData.allFields.length > 0) {
+        validationHtml = renderValidationTable(valData.errors, valData.allFields);
+      } else {
+        validationHtml = '<pre>' + colorizeJson(
+          validationEvts.map(function (e) { return e.data || {}; }),
+          0, 0
+        ) + '</pre>';
+      }
     } else {
       // Check if the step has validation events at all — if not, it may
       // simply have no output contract configured.
@@ -1146,6 +1619,10 @@
           navBar +
           summaryHtml +
           '<div class="panel">' +
+          '<div class="panel-header">Duration Timeline</div>' +
+          renderFlameChartPlaceholder() +
+          '</div>' +
+          '<div class="panel">' +
           '<div class="panel-header">Step Dependency Graph</div>' +
           renderGraphPlaceholder() +
           '</div>' +
@@ -1154,8 +1631,17 @@
           eventsHtml +
           '</div>';
 
+        // Mount flame chart AFTER innerHTML is set (two-phase rendering)
+        mountFlameChart(events);
+
         // Mount SVG graph AFTER innerHTML is set (two-phase rendering)
         mountDependencyGraph(events);
+
+        // Mount retry timelines for any steps that have retries
+        var stepIds = Array.from(new Set(events.map(function (e) { return e.step_id; }).filter(Boolean)));
+        stepIds.forEach(function (sid) {
+          mountRetryTimeline(sid, events);
+        });
 
         document.getElementById('back-btn').addEventListener('click', function () {
           navigate('run-list', {});
@@ -1322,6 +1808,7 @@
       if (currentView !== 'run-list') return;
       fetchRuns().then(function (newRuns) {
         runs = newRuns;
+        selectedRunIndex = -1;
         const app = document.getElementById('app');
         if (app && currentView === 'run-list') {
           app.innerHTML = renderRunTable(runs, filters);
@@ -1330,8 +1817,8 @@
             runs.length + ' run' + (runs.length !== 1 ? 's' : '');
         }
       }).catch(function () {
-        var bar = document.getElementById('status-bar');
-        if (bar) bar.textContent = 'Auto-refresh: connection error (data may be stale)';
+        var statusText = document.getElementById('status-text');
+        if (statusText) statusText.textContent = 'Auto-refresh: connection error (data may be stale)';
       });
     }, intervalMs);
   }
@@ -1365,7 +1852,163 @@
   // === Router ===
   // ============================================================
 
+  // ============================================================
+  // === Enhancement 9: Search Across Runs ===
+  // ============================================================
+
+  /**
+   * Highlight all occurrences of *query* in *text* using <mark> tags.
+   * Both are compared case-insensitively. XSS-safe: *text* is HTML-escaped
+   * before injection, and <mark> tags are inserted as literals.
+   *
+   * @param {string} text - The snippet text to render.
+   * @param {string} query - The literal query to highlight.
+   * @returns {string} - HTML string with <mark> wrappers around each match.
+   */
+  function highlightMatch(text, query) {
+    if (!query) return esc(text);
+    var escaped = esc(text);
+    var escapedQuery = esc(query);
+    // Build a case-insensitive replacement without using RegExp on user input.
+    // Walk through the escaped text character-by-character finding matches.
+    var lowerText = escaped.toLowerCase();
+    var lowerQuery = escapedQuery.toLowerCase();
+    var result = '';
+    var i = 0;
+    while (i < escaped.length) {
+      var idx = lowerText.indexOf(lowerQuery, i);
+      if (idx === -1) {
+        result += escaped.slice(i);
+        break;
+      }
+      result += escaped.slice(i, idx);
+      result += '<mark>' + escaped.slice(idx, idx + escapedQuery.length) + '</mark>';
+      i = idx + escapedQuery.length;
+    }
+    return result;
+  }
+
+  /**
+   * Render search results into the #search-results-area element.
+   *
+   * @param {Array} results - Array of result objects from /api/search.
+   * @param {boolean} hasMore - Whether a "Load more" button should appear.
+   */
+  function renderSearchResults(results, hasMore) {
+    var area = document.getElementById('search-results-area');
+    if (!area) return;
+
+    if (results.length === 0) {
+      area.innerHTML = '<div class="empty">No results found.</div>';
+      return;
+    }
+
+    var html = '<div class="search-results">';
+    results.forEach(function (r) {
+      var snippet = highlightMatch(String(r.snippet || ''), searchQuery);
+      html +=
+        '<div class="search-result" data-run-id="' + esc(r.run_id || '') + '">' +
+          '<div class="search-result-meta">' +
+            '<span class="result-wf">' + esc(r.workflow_name || '') + '</span>' +
+            '<span class="result-run-id">' + esc((r.run_id || '').slice(0, 8)) + '</span>' +
+            '<span class="result-ts">' + esc(r.timestamp || '') + '</span>' +
+          '</div>' +
+          '<span class="search-result-event">' + esc(r.event_type || '') + '</span>' +
+          (r.step_id ? '<span class="search-result-step">' + esc(r.step_id) + '</span>' : '') +
+          '<div class="search-result-snippet">' + snippet + '</div>' +
+        '</div>';
+    });
+    html += '</div>';
+
+    if (hasMore) {
+      html += '<button class="search-load-more" id="search-load-more-btn">Load more</button>';
+    }
+
+    area.innerHTML = html;
+  }
+
+  /**
+   * Render the search view with a large input and results area.
+   * Called by navigate('search', {}).
+   */
+  function showSearchView() {
+    currentView = 'search';
+    currentRunId = null;
+    var app = document.getElementById('app');
+    app.innerHTML =
+      '<div class="search-view">' +
+        '<input id="search-input-main" class="search-input-large" type="search" ' +
+               'placeholder="Search events across all runs\u2026" ' +
+               'aria-label="Search across all runs" ' +
+               'autocomplete="off" spellcheck="false" ' +
+               'value="' + esc(searchQuery) + '">' +
+        '<div class="search-meta" id="search-meta"></div>' +
+        '<div id="search-results-area"></div>' +
+      '</div>';
+
+    var input = document.getElementById('search-input-main');
+    if (input) {
+      var debouncedSearch = debounce(function () {
+        executeSearch(input.value, false);
+      }, 300);
+      input.addEventListener('input', debouncedSearch);
+      // Re-render existing results (if navigating back to search view)
+      if (searchQuery) {
+        renderSearchResults(searchResults, searchHasMore);
+        var meta = document.getElementById('search-meta');
+        if (meta) meta.textContent = searchResults.length + ' result(s) for \u201c' + searchQuery + '\u201d';
+      }
+      input.focus();
+    }
+  }
+
+  /**
+   * Execute a search, optionally appending to existing results (load more).
+   *
+   * @param {string} query - The search query string.
+   * @param {boolean} append - When true, append results to existing list (load more).
+   */
+  function executeSearch(query, append) {
+    if (!query) {
+      searchQuery = '';
+      searchResults = [];
+      searchHasMore = false;
+      searchOffset = 0;
+      renderSearchResults([], false);
+      var meta = document.getElementById('search-meta');
+      if (meta) meta.textContent = '';
+      return;
+    }
+    if (!append) {
+      searchQuery = query;
+      searchOffset = 0;
+      searchResults = [];
+    }
+    fetchSearch(query, searchOffset)
+      .then(function (data) {
+        var newResults = data.results || [];
+        searchHasMore = Boolean(data.has_more);
+        searchResults = append ? searchResults.concat(newResults) : newResults;
+        searchOffset += newResults.length;
+        renderSearchResults(searchResults, searchHasMore);
+        var meta = document.getElementById('search-meta');
+        if (meta) {
+          var scanned = data.total_scanned || 0;
+          meta.textContent =
+            searchResults.length + ' result(s) — ' + scanned + ' events scanned';
+        }
+      })
+      .catch(function (err) {
+        var area = document.getElementById('search-results-area');
+        if (area) {
+          area.innerHTML =
+            '<div class="empty text-error">Search error: ' + esc(String(err)) + '</div>';
+        }
+      });
+  }
+
   function navigate(view, params) {
+    selectedRunIndex = -1;
     if (view === 'run-list') {
       selectedRuns = [];
       loadRuns();
@@ -1374,6 +2017,8 @@
       showRunDetail(params.runId);
     } else if (view === 'diff' && params.idA && params.idB) {
       showDiffView(params.idA, params.idB);
+    } else if (view === 'search') {
+      showSearchView();
     }
   }
 
@@ -1479,6 +2124,25 @@
       return;
     }
 
+    // Validation detail row — toggle expandable detail for failed fields
+    const valRow = e.target.closest('.validation-row');
+    if (valRow) {
+      const fieldName = valRow.dataset.valField;
+      if (fieldName) {
+        const expandRow = valRow.nextElementSibling;
+        if (expandRow && expandRow.classList.contains('validation-expandable')) {
+          if (expandRow.classList.contains('visible')) {
+            expandRow.classList.remove('visible');
+            valRow.setAttribute('aria-expanded', 'false');
+          } else {
+            expandRow.classList.add('visible');
+            valRow.setAttribute('aria-expanded', 'true');
+          }
+        }
+      }
+      return;
+    }
+
     // Expandable event row
     const eventRow = e.target.closest('.event-row');
     if (eventRow) {
@@ -1530,6 +2194,20 @@
     if (runRow) {
       const runId = runRow.dataset.runId;
       if (runId) navigate('run-detail', { runId: runId });
+      return;
+    }
+
+    // Search result click — navigate to run detail
+    const searchResultEl = e.target.closest('.search-result');
+    if (searchResultEl) {
+      const runId = searchResultEl.dataset.runId;
+      if (runId) navigate('run-detail', { runId: runId });
+      return;
+    }
+
+    // Search load-more button
+    if (e.target.closest('#search-load-more-btn')) {
+      executeSearch(searchQuery, true);
       return;
     }
   }
@@ -1778,6 +2456,514 @@
   }
 
   // ============================================================
+  // === Keyboard Shortcuts ===
+  // ============================================================
+
+  /** Move the run-list selection highlight by delta (+1 or -1). */
+  function moveRunSelection(delta) {
+    var rows = document.querySelectorAll('tr.clickable');
+    if (!rows.length) return;
+    var total = rows.length;
+    selectedRunIndex = Math.max(0, Math.min(selectedRunIndex + delta, total - 1));
+    updateRunSelectionHighlight(rows);
+  }
+
+  /** Apply the .run-row-selected class to the current selectedRunIndex row. */
+  function updateRunSelectionHighlight(rows) {
+    if (!rows) rows = document.querySelectorAll('tr.clickable');
+    rows.forEach(function (row, i) {
+      if (i === selectedRunIndex) {
+        row.classList.add('run-row-selected');
+        row.scrollIntoView({ block: 'nearest' });
+      } else {
+        row.classList.remove('run-row-selected');
+      }
+    });
+  }
+
+  /** Expand or collapse all .step-group-events in the run-detail view. */
+  function toggleAllStepGroups() {
+    var groups = document.querySelectorAll('.step-group-events');
+    if (!groups.length) return;
+    // Determine target state: if any is hidden, expand all; otherwise collapse all
+    var anyHidden = false;
+    groups.forEach(function (g) {
+      if (!g.classList.contains('visible')) anyHidden = true;
+    });
+    groups.forEach(function (g) {
+      var header = g.closest('.step-group') && g.closest('.step-group').querySelector('.step-group-header');
+      var chevron = header && header.querySelector('.group-chevron');
+      if (anyHidden) {
+        g.classList.add('visible');
+        if (chevron) chevron.classList.add('expanded');
+      } else {
+        g.classList.remove('visible');
+        if (chevron) chevron.classList.remove('expanded');
+      }
+    });
+  }
+
+  /** Show the keyboard shortcuts overlay. */
+  function showShortcutsOverlay() {
+    if (shortcutsOverlayVisible) return;
+    shortcutsOverlayVisible = true;
+    var overlay = document.createElement('div');
+    overlay.className = 'shortcuts-overlay';
+    overlay.id = 'shortcuts-overlay';
+    overlay.setAttribute('role', 'dialog');
+    overlay.setAttribute('aria-modal', 'true');
+    overlay.setAttribute('aria-labelledby', 'shortcuts-title');
+    var modal = document.createElement('div');
+    modal.className = 'shortcuts-modal';
+    modal.innerHTML =
+      '<button class="shortcuts-close" aria-label="Close shortcuts">\u00d7</button>' +
+      '<h2 id="shortcuts-title">Keyboard Shortcuts</h2>' +
+      '<div class="shortcuts-row"><kbd>j</kbd><span class="shortcut-desc">Next run</span></div>' +
+      '<div class="shortcuts-row"><kbd>k</kbd><span class="shortcut-desc">Previous run</span></div>' +
+      '<div class="shortcuts-row"><kbd>Enter</kbd><span class="shortcut-desc">Open selected run</span></div>' +
+      '<div class="shortcuts-row"><kbd>Esc</kbd><span class="shortcut-desc">Go back</span></div>' +
+      '<div class="shortcuts-row"><kbd>/</kbd><span class="shortcut-desc">Focus search</span></div>' +
+      '<div class="shortcuts-row"><kbd>r</kbd><span class="shortcut-desc">Toggle auto-refresh</span></div>' +
+      '<div class="shortcuts-row"><kbd>e</kbd><span class="shortcut-desc">Expand/collapse all</span></div>' +
+      '<div class="shortcuts-row"><kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd><span class="shortcut-desc">Inspector tabs</span></div>' +
+      '<div class="shortcuts-row"><kbd>?</kbd><span class="shortcut-desc">Show this help</span></div>';
+    overlay.appendChild(modal);
+    overlay.addEventListener('click', function (e) {
+      if (!e.target.closest('.shortcuts-modal')) hideShortcutsOverlay();
+    });
+    var closeBtn = modal.querySelector('.shortcuts-close');
+    if (closeBtn) closeBtn.addEventListener('click', hideShortcutsOverlay);
+    document.body.appendChild(overlay);
+    overlay.setAttribute('tabindex', '-1');
+    overlay.focus();
+  }
+
+  /** Remove the keyboard shortcuts overlay from the DOM. */
+  function hideShortcutsOverlay() {
+    if (!shortcutsOverlayVisible) return;
+    shortcutsOverlayVisible = false;
+    var el = document.getElementById('shortcuts-overlay');
+    if (el) el.remove();
+    var trigger = document.getElementById('shortcuts-trigger');
+    if (trigger) trigger.focus();
+  }
+
+  /** Dispatch a keydown event to the correct shortcut handler. */
+  function handleShortcut(e) {
+    var tag = document.activeElement ? document.activeElement.tagName : '';
+    // Allow Escape even when input is focused
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      if (shortcutsOverlayVisible) { hideShortcutsOverlay(); return; }
+      if (currentView !== 'run-list') { navigate('run-list', {}); }
+      return;
+    }
+    // Suppress all other shortcuts when a form field has focus
+    if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return;
+
+    switch (e.key) {
+      case 'j':
+        if (currentView === 'run-list') moveRunSelection(+1);
+        break;
+      case 'k':
+        if (currentView === 'run-list') moveRunSelection(-1);
+        break;
+      case 'Enter':
+        if (currentView === 'run-list' && selectedRunIndex >= 0) {
+          var rows = document.querySelectorAll('tr.clickable');
+          var row = rows[selectedRunIndex];
+          if (row && row.dataset.runId) navigate('run-detail', { runId: row.dataset.runId });
+        }
+        break;
+      case '/':
+        e.preventDefault();
+        if (currentView === 'search') {
+          // Already on search view — focus the input
+          var searchInputEl = document.getElementById('search-input-main');
+          if (searchInputEl) searchInputEl.focus();
+        } else {
+          navigate('search', {});
+        }
+        break;
+      case 'r':
+        toggleAutoRefresh();
+        break;
+      case 'e':
+        if (currentView === 'run-detail') toggleAllStepGroups();
+        break;
+      case '1':
+      case '2':
+      case '3':
+        if (openInspectorStepId) {
+          var tabIndex = parseInt(e.key, 10) - 1;
+          var tabs = document.querySelectorAll('.inspector-tab');
+          if (tabs[tabIndex]) switchInspectorTab(tabs[tabIndex]);
+        }
+        break;
+      case '?':
+        if (shortcutsOverlayVisible) hideShortcutsOverlay();
+        else showShortcutsOverlay();
+        break;
+    }
+  }
+
+  /** Attach a single keydown listener on document. Called once at boot. */
+  function registerShortcuts() {
+    document.addEventListener('keydown', handleShortcut);
+    var trigger = document.getElementById('shortcuts-trigger');
+    if (trigger) {
+      trigger.addEventListener('click', function () { showShortcutsOverlay(); });
+    }
+  }
+
+  // ============================================================
+  // === Flame Chart (Enhancement 10) ===
+  // ============================================================
+
+  // --- Flame chart layout constants ---
+  var FLAME_ROW_H   = 36;
+  var FLAME_BAR_H   = 24;
+  var FLAME_LABEL_W = 120;
+  var FLAME_PAD_TOP = 30;
+  var FLAME_PAD_RIGHT = 20;
+
+  /**
+   * Extract per-step timing data from run events.
+   * Returns {
+   *   steps: [{id, startMs, endMs, status, attempts: [{startMs, endMs, status}]}],
+   *   totalDurationMs,
+   *   workflowStartTs
+   * }
+   */
+  function extractFlameChartData(events) {
+    // Find workflow_start timestamp as time zero
+    var workflowStartTs = null;
+    for (var i = 0; i < events.length; i++) {
+      if (events[i].event_type === 'workflow_start') {
+        workflowStartTs = events[i].timestamp;
+        break;
+      }
+    }
+    if (!workflowStartTs) {
+      // Fall back to first event timestamp
+      for (var i = 0; i < events.length; i++) {
+        if (events[i].timestamp) { workflowStartTs = events[i].timestamp; break; }
+      }
+    }
+    var t0 = workflowStartTs ? new Date(workflowStartTs).getTime() : 0;
+
+    // Build per-step attempt records
+    var stepMap = {};
+    var stepOrder = [];
+
+    for (var i = 0; i < events.length; i++) {
+      var ev = events[i];
+      var sid = ev.step_id;
+      if (!sid) continue;
+
+      if (!stepMap[sid]) {
+        stepMap[sid] = { id: sid, status: 'pending', startMs: null, endMs: null, attempts: [] };
+        stepOrder.push(sid);
+      }
+
+      var s = stepMap[sid];
+      var evTs = ev.timestamp ? new Date(ev.timestamp).getTime() - t0 : null;
+
+      if (ev.event_type === 'step_start') {
+        if (s.startMs === null && evTs !== null) s.startMs = evTs;
+        // Track attempt start
+        var attempt = (ev.data && ev.data.attempt) ? ev.data.attempt : (s.attempts.length + 1);
+        s.attempts.push({ attempt: attempt, startMs: evTs, endMs: null, status: 'running' });
+      } else if (ev.event_type === 'step_complete' || ev.event_type === 'step_finish') {
+        s.status = 'complete';
+        if (evTs !== null) s.endMs = evTs;
+        if (s.attempts.length > 0) {
+          var last = s.attempts[s.attempts.length - 1];
+          last.endMs = evTs;
+          last.status = 'complete';
+        }
+      } else if (ev.event_type === 'step_fail' || ev.event_type === 'step_error') {
+        s.status = 'failed';
+        if (evTs !== null) s.endMs = evTs;
+        if (s.attempts.length > 0) {
+          var last = s.attempts[s.attempts.length - 1];
+          last.endMs = evTs;
+          last.status = 'failed';
+        }
+      } else if (ev.event_type === 'step_skip' || ev.event_type === 'step_skipped') {
+        s.status = 'skipped';
+        if (evTs !== null) { if (s.startMs === null) s.startMs = evTs; s.endMs = evTs; }
+      }
+    }
+
+    var steps = stepOrder.map(function (sid) { return stepMap[sid]; });
+    var totalDurationMs = 0;
+    steps.forEach(function (st) {
+      if (st.endMs !== null && st.endMs > totalDurationMs) totalDurationMs = st.endMs;
+    });
+
+    return { steps: steps, totalDurationMs: totalDurationMs, workflowStartTs: workflowStartTs };
+  }
+
+  /**
+   * Auto-scale tick marks for the flame chart time axis.
+   * Picks an interval that gives 4–8 ticks across the chart width.
+   * Returns [{ms, label, x}]
+   */
+  function computeAxisTicks(totalMs, chartWidth) {
+    if (!totalMs || totalMs <= 0 || !chartWidth) {
+      return [{ ms: 0, label: '0ms', x: 0 }];
+    }
+    // Sub-ms durations: return 0ms and 1ms ticks
+    if (totalMs < 1) {
+      return [
+        { ms: 0, label: '0ms', x: 0 },
+        { ms: 1, label: '1ms', x: chartWidth },
+      ];
+    }
+    var intervals = [1, 5, 10, 50, 100, 500, 1000, 5000, 10000, 30000, 60000];
+    var chosen = intervals[intervals.length - 1];
+    for (var i = 0; i < intervals.length; i++) {
+      var count = Math.floor(totalMs / intervals[i]);
+      if (count >= 4 && count <= 8) { chosen = intervals[i]; break; }
+      if (count < 4) { chosen = intervals[i]; break; }
+    }
+    var ticks = [];
+    for (var ms = 0; ms <= totalMs; ms += chosen) {
+      var x = chartWidth > 0 ? (ms / totalMs) * chartWidth : 0;
+      var label = ms < 1000 ? ms + 'ms' : (ms / 1000).toFixed(ms % 1000 === 0 ? 0 : 1) + 's';
+      ticks.push({ ms: ms, label: label, x: x });
+    }
+    if (ticks.length === 0) {
+      ticks.push({ ms: 0, label: '0ms', x: 0 });
+    }
+    return ticks;
+  }
+
+  /**
+   * Render the flame chart container placeholder (HTML string).
+   * The actual SVG is mounted by mountFlameChart() after innerHTML is set.
+   */
+  function renderFlameChartPlaceholder() {
+    return '<div class="flame-chart-container" id="flame-chart"></div>';
+  }
+
+  /** Return the fill color for a bar based on step status. */
+  function flameBarColor(status, tokens) {
+    if (status === 'complete' || status === 'completed') return tokens.success;
+    if (status === 'failed') return tokens.error;
+    if (status === 'skipped') return tokens.skipped;
+    if (status === 'running') return tokens.running;
+    return tokens.bg600;
+  }
+
+  /**
+   * Create/position the flame chart tooltip div.
+   * @param {number} x  - Fixed left position (px)
+   * @param {number} y  - Fixed top position (px)
+   * @param {object} data - { name, startMs, endMs, attemptCount }
+   */
+  function showFlameTooltip(x, y, data) {
+    hideFlameTooltip();
+    var tt = document.createElement('div');
+    tt.className = 'flame-chart-tooltip';
+    tt.id = 'flame-tooltip';
+    tt.style.left = x + 'px';
+    tt.style.top  = y + 'px';
+
+    var dur = (data.endMs !== null && data.startMs !== null) ? (data.endMs - data.startMs) : null;
+    var durStr   = dur !== null ? Math.round(dur) + 'ms' : '\u2014';
+    var startStr = data.startMs !== null ? Math.round(data.startMs) + 'ms' : '\u2014';
+    var endStr   = data.endMs   !== null ? Math.round(data.endMs)   + 'ms' : '\u2014';
+
+    function ttRow(cls, text) {
+      var el = document.createElement('div');
+      el.className = cls;
+      el.textContent = text;
+      return el;
+    }
+
+    tt.appendChild(ttRow('tt-label', data.name));
+    tt.appendChild(ttRow('tt-row', 'Start: ' + startStr));
+    tt.appendChild(ttRow('tt-row', 'End: ' + endStr));
+    tt.appendChild(ttRow('tt-row', 'Duration: ' + durStr));
+    if (data.attemptCount && data.attemptCount > 1) {
+      tt.appendChild(ttRow('tt-row', 'Attempts: ' + data.attemptCount));
+    }
+    document.body.appendChild(tt);
+  }
+
+  /** Remove the flame chart tooltip if it exists. */
+  function hideFlameTooltip() {
+    var existing = document.getElementById('flame-tooltip');
+    if (existing) existing.parentNode.removeChild(existing);
+  }
+
+  /**
+   * Build the flame chart SVG and append it to #flame-chart.
+   * Must be called AFTER the container is in the DOM.
+   */
+  function mountFlameChart(events) {
+    var container = document.getElementById('flame-chart');
+    if (!container) return;
+
+    var data = extractFlameChartData(events);
+    if (!data.steps || data.steps.length === 0) {
+      container.style.display = 'none';
+      return;
+    }
+
+    var tokens = getCssTokens();
+    var steps = data.steps;
+    var totalMs = data.totalDurationMs || 1;
+
+    // SVG dimensions
+    var containerW = container.clientWidth || 800;
+    var chartAreaW = Math.max(containerW - FLAME_LABEL_W - FLAME_PAD_RIGHT, 200);
+    var svgW = FLAME_LABEL_W + chartAreaW + FLAME_PAD_RIGHT;
+    var svgH = FLAME_PAD_TOP + steps.length * FLAME_ROW_H + 20;
+
+    var ticks = computeAxisTicks(totalMs, chartAreaW);
+
+    var svg = svgEl('svg', {
+      width: svgW,
+      height: svgH,
+      'aria-label': 'Step duration flame chart',
+    });
+
+    // --- Vertical grid lines ---
+    ticks.forEach(function (tick) {
+      var gx = FLAME_LABEL_W + tick.x;
+      var gridLine = svgLine(gx, FLAME_PAD_TOP, gx, svgH - 20,
+        tokens.chartGrid || '#1e293b', '4 4');
+      svg.appendChild(gridLine);
+    });
+
+    // --- Axis tick labels ---
+    ticks.forEach(function (tick) {
+      var gx = FLAME_LABEL_W + tick.x;
+      var label = svgText(gx, FLAME_PAD_TOP - 6, tick.label, {
+        anchor: 'middle',
+        fontSize: 11,
+        fill: tokens.chartAxis || '#475569',
+        fontFamily: tokens.fontMono,
+      });
+      svg.appendChild(label);
+    });
+
+    // --- Step rows ---
+    steps.forEach(function (step, rowIdx) {
+      var rowY = FLAME_PAD_TOP + rowIdx * FLAME_ROW_H;
+      var barY = rowY + (FLAME_ROW_H - FLAME_BAR_H) / 2;
+
+      // Step name label
+      var nameLabel = svgText(FLAME_LABEL_W - 8, rowY + FLAME_ROW_H / 2, step.id, {
+        anchor: 'end',
+        baseline: 'middle',
+        fontSize: 11,
+        fill: tokens.textMuted,
+        fontFamily: tokens.fontMono,
+      });
+      svg.appendChild(nameLabel);
+
+      var hasAttempts = step.attempts && step.attempts.length > 1;
+      var barColor = flameBarColor(step.status, tokens);
+
+      if (hasAttempts) {
+        // Multiple attempts — draw segmented bars with backoff gap segments between them
+        step.attempts.forEach(function (att, attIdx) {
+          if (att.startMs === null) return;
+          var attStartMs = Math.max(att.startMs, 0);
+          var attEndMs   = att.endMs !== null ? att.endMs : totalMs;
+          var bx = FLAME_LABEL_W + (attStartMs / totalMs) * chartAreaW;
+          var bw = Math.max(((attEndMs - attStartMs) / totalMs) * chartAreaW, 2);
+          var attColor = flameBarColor(att.status, tokens);
+          var bar = svgRect(bx, barY, bw, FLAME_BAR_H, 4, attColor, 'none', 0);
+          bar.setAttribute('opacity', '0.85');
+          bar.setAttribute('data-step-id', step.id);
+          bar.setAttribute('data-step-name', step.id);
+          bar.setAttribute('data-start-ms', String(attStartMs));
+          bar.setAttribute('data-end-ms', String(attEndMs));
+          bar.setAttribute('data-attempt-count', String(step.attempts.length));
+          bar.style.cursor = 'pointer';
+          svg.appendChild(bar);
+
+          // Draw backoff gap segment between this attempt end and next attempt start
+          var nextAtt = step.attempts[attIdx + 1];
+          if (nextAtt && nextAtt.startMs !== null && att.endMs !== null) {
+            var gapStartMs = Math.max(att.endMs, 0);
+            var gapEndMs   = Math.max(nextAtt.startMs, gapStartMs);
+            var gw = ((gapEndMs - gapStartMs) / totalMs) * chartAreaW;
+            if (gw > 1) {
+              var gx = FLAME_LABEL_W + (gapStartMs / totalMs) * chartAreaW;
+              var gap = svgRect(gx, barY, gw, FLAME_BAR_H, 0, 'none', tokens.chartBarGap, 1);
+              gap.setAttribute('stroke-dasharray', '4 2');
+              svg.appendChild(gap);
+            }
+          }
+        });
+      } else {
+        // Single bar (foreach steps also render as regular bars — sub-bar fan-out is a future enhancement)
+        var startMs = step.startMs !== null ? Math.max(step.startMs, 0) : 0;
+        var endMs   = step.endMs   !== null ? step.endMs   : totalMs;
+        var bx = FLAME_LABEL_W + (startMs / totalMs) * chartAreaW;
+        var bw = Math.max(((endMs - startMs) / totalMs) * chartAreaW, 2);
+        var bar = svgRect(bx, barY, bw, FLAME_BAR_H, 4, barColor, 'none', 0);
+        bar.setAttribute('opacity', '0.85');
+        bar.setAttribute('data-step-id', step.id);
+        bar.setAttribute('data-step-name', step.id);
+        bar.setAttribute('data-start-ms', String(startMs));
+        bar.setAttribute('data-end-ms', String(endMs));
+        bar.setAttribute('data-attempt-count', '1');
+        bar.style.cursor = 'pointer';
+        svg.appendChild(bar);
+      }
+    });
+
+    container.appendChild(svg);
+
+    // --- Hover tooltip ---
+    svg.addEventListener('mousemove', function (e) {
+      var bar = e.target.closest('rect[data-step-id]');
+      if (bar) {
+        // Reset all bars before highlighting the hovered one
+        svg.querySelectorAll('rect[data-step-id]').forEach(function (r) {
+          r.setAttribute('opacity', '0.85');
+        });
+        var name         = bar.getAttribute('data-step-name') || bar.getAttribute('data-step-id') || '';
+        var startMs      = parseFloat(bar.getAttribute('data-start-ms'));
+        var endMs        = parseFloat(bar.getAttribute('data-end-ms'));
+        var attemptCount = parseInt(bar.getAttribute('data-attempt-count'), 10) || 1;
+        showFlameTooltip(e.clientX + 12, e.clientY - 10, {
+          name: name,
+          startMs: isNaN(startMs) ? null : startMs,
+          endMs:   isNaN(endMs)   ? null : endMs,
+          attemptCount: attemptCount,
+        });
+        bar.setAttribute('opacity', '1.0');
+      } else {
+        hideFlameTooltip();
+      }
+    });
+
+    svg.addEventListener('mouseleave', function () {
+      hideFlameTooltip();
+      svg.querySelectorAll('rect[data-step-id]').forEach(function (r) {
+        r.setAttribute('opacity', '0.85');
+      });
+    });
+
+    // --- Click: scroll to step group ---
+    svg.addEventListener('click', function (e) {
+      var bar = e.target.closest('rect[data-step-id]');
+      if (bar) {
+        var stepId = bar.getAttribute('data-step-id');
+        if (stepId) scrollToStepGroup(stepId);
+      }
+    });
+  }
+
+  // ============================================================
   // === Initial Load ===
   // ============================================================
 
@@ -1792,13 +2978,21 @@
         app.innerHTML =
           '<div class="empty text-error">Error loading runs: ' +
           esc(String(err)) + '</div>';
-        document.getElementById('status-bar').textContent = 'Error: ' + String(err);
+        var statusText = document.getElementById('status-text');
+        if (statusText) statusText.textContent = 'Error: ' + String(err);
       });
   }
 
   // ============================================================
   // === Auto-refresh toggle button ===
   // ============================================================
+
+  const searchBtn = document.getElementById('search-btn');
+  if (searchBtn) {
+    searchBtn.addEventListener('click', function () {
+      navigate('search', {});
+    });
+  }
 
   const refreshToggle = document.getElementById('refresh-toggle');
   if (refreshToggle) {
@@ -1820,9 +3014,11 @@
   // === Boot ===
   // ============================================================
 
-  document.getElementById('status-bar').textContent =
+  var statusText = document.getElementById('status-text');
+  if (statusText) statusText.textContent =
     TOKEN ? 'Authenticated \u2014 ' + window.location.host : 'No auth \u2014 ' + window.location.host;
 
   loadRuns();
+  registerShortcuts();
 
 })();
