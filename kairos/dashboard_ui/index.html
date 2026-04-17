@@ -18,6 +18,9 @@
       <span class="badge badge-count" id="run-count" aria-live="polite">loading&#8230;</span>
     </div>
     <div class="header-right">
+      <button class="btn-icon" id="search-btn" aria-label="Search across runs" title="Search (/)">
+        <svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="7" cy="7" r="4"/><path d="M10 10l4 4"/></svg>
+      </button>
       <button class="btn-toggle" id="refresh-toggle" aria-label="Toggle auto-refresh" aria-pressed="false">
         <span class="refresh-dot" id="refresh-dot"></span>
         <span id="refresh-label">Auto-refresh</span>
@@ -33,7 +36,7 @@
   <main class="main" id="app">
     <div class="empty">Loading run history&#8230;</div>
   </main>
-  <footer id="status-bar" role="status" aria-live="polite">Connecting&#8230;</footer>
+  <footer id="status-bar" role="status" aria-live="polite"><span id="status-text">Connecting&#8230;</span><button class="shortcuts-trigger" id="shortcuts-trigger" aria-label="Keyboard shortcuts">?</button></footer>
   <script src="/static/app.js"></script>
 </body>
 </html>

@@ -1347,3 +1347,370 @@ td code, td .mono {
   color: var(--text-faint);
   font-style: italic;
 }
+
+/* ============================================================
+   Enhancement 13 — Keyboard Shortcuts
+   ============================================================ */
+
+.run-row-selected {
+  background: var(--accent-muted);
+  border-left: 3px solid var(--accent-primary);
+}
+
+.shortcuts-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  background: rgba(8, 12, 20, 0.8);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.shortcuts-modal {
+  background: var(--bg-800);
+  border: var(--border-default);
+  border-radius: var(--radius-lg);
+  max-width: 480px;
+  width: 90%;
+  padding: var(--space-6);
+}
+
+.shortcuts-modal h2 {
+  font-family: var(--font-ui);
+  font-size: var(--text-lg);
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 0 0 var(--space-4) 0;
+}
+
+.shortcuts-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-2) 0;
+  border-bottom: var(--border-subtle);
+}
+
+.shortcuts-row:last-child {
+  border-bottom: none;
+}
+
+.shortcuts-row kbd {
+  background: var(--bg-700);
+  border: var(--border-default);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  color: var(--text-primary);
+  padding: var(--space-1) var(--space-2);
+  min-width: 24px;
+  text-align: center;
+}
+
+.shortcut-desc {
+  font-family: var(--font-ui);
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+}
+
+.shortcuts-close {
+  position: absolute;
+  top: var(--space-4);
+  right: var(--space-4);
+  background: transparent;
+  border: none;
+  color: var(--text-dim);
+  font-size: var(--text-lg);
+  line-height: 1;
+  cursor: pointer;
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+}
+
+.shortcuts-close:hover {
+  color: var(--text-secondary);
+  background: var(--bg-750);
+}
+
+.shortcuts-trigger {
+  background: transparent;
+  border: var(--border-default);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--text-dim);
+  padding: var(--space-1) var(--space-2);
+  cursor: pointer;
+  margin-left: var(--space-3);
+}
+
+.shortcuts-trigger:hover {
+  color: var(--text-secondary);
+  background: var(--bg-750);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .shortcuts-overlay {
+    animation: none;
+  }
+}
+
+/* -------------------------------------------------------------------------
+   Enhancement 12 — Validation Detail Panel
+   ------------------------------------------------------------------------- */
+
+.validation-detail {
+  margin-top: var(--space-2);
+}
+
+.validation-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.validation-table th {
+  font-family: var(--font-ui);
+  font-size: var(--text-sm);
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-weight: 600;
+  padding: var(--space-3) var(--space-5);
+  text-align: left;
+  border-bottom: var(--border-default);
+}
+
+.validation-row {
+  border-bottom: var(--border-subtle);
+  cursor: pointer;
+}
+
+.validation-row td {
+  padding: var(--space-3) var(--space-5);
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+
+.validation-row-fail {
+  background: var(--color-error-bg);
+}
+
+.validation-row-fail td {
+  color: var(--color-error-text);
+}
+
+.validation-row-fail:hover {
+  background: var(--color-error-bg-hover, var(--color-error-bg));
+}
+
+.validation-row-pass {
+  background: var(--color-success-bg);
+}
+
+.validation-row-pass td {
+  color: var(--color-success-text);
+}
+
+.validation-status-icon {
+  width: 24px;
+  text-align: center;
+}
+
+.validation-field-name {
+  font-size: var(--text-base);
+  font-weight: 500;
+}
+
+.validation-expandable {
+  display: none;
+  background: var(--bg-950);
+}
+
+.validation-expandable.visible {
+  display: table-row;
+}
+
+.validation-expandable td {
+  padding: var(--space-3) var(--space-4);
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+}
+
+.validation-footer {
+  padding: var(--space-3) var(--space-4);
+  font-family: var(--font-ui);
+  font-size: var(--text-sm);
+  color: var(--text-dim);
+  border-top: var(--border-default);
+}
+
+/* ============================================================
+   Enhancement 11 — Retry Timeline
+   ============================================================ */
+
+.retry-timeline-container {
+  padding: var(--space-4) var(--space-5);
+  overflow-x: auto;
+  border-bottom: var(--border-subtle);
+  background: var(--bg-900);
+}
+
+.retry-timeline-container svg {
+  display: block;
+  min-width: fit-content;
+}
+
+.retry-card {
+  cursor: pointer;
+  outline: none;
+}
+
+.retry-card:focus rect {
+  filter: brightness(1.2);
+}
+
+.retry-expanded-context {
+  background: var(--bg-950);
+  padding: var(--space-4);
+  border-top: var(--border-subtle);
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.retry-expanded-context pre {
+  margin: 0;
+  line-height: var(--leading-base, 1.5);
+}
+
+/* ============================================================
+   Enhancement 10 — Duration Flame Chart
+   ============================================================ */
+
+.flame-chart-container {
+  position: relative;
+  overflow-x: auto;
+  padding: var(--space-4) 0;
+  background: var(--bg-900);
+  border-bottom: var(--border-default);
+}
+
+.flame-chart-container svg {
+  display: block;
+}
+
+.flame-chart-tooltip {
+  position: fixed;
+  z-index: 100;
+  background: var(--bg-800);
+  border: var(--border-default);
+  border-radius: var(--radius-md);
+  padding: var(--space-2) var(--space-3);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  pointer-events: none;
+  max-width: 280px;
+  white-space: nowrap;
+}
+
+.flame-chart-tooltip .tt-label {
+  color: var(--text-primary);
+  font-weight: 600;
+  margin-bottom: var(--space-1);
+}
+
+.flame-chart-tooltip .tt-row {
+  color: var(--text-muted);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .flame-chart-tooltip {
+    transition: none;
+  }
+}
+
+/* ============================================================
+   Enhancement 9: Search Across Runs
+   ============================================================ */
+
+.search-view { padding: var(--space-6); }
+
+.search-input-large {
+  width: 100%;
+  background: var(--bg-700);
+  border: var(--border-default);
+  border-radius: var(--radius-md);
+  padding: var(--space-3) var(--space-5);
+  font-family: var(--font-mono);
+  font-size: var(--text-md);
+  color: var(--text-primary);
+  outline: none;
+  box-sizing: border-box;
+}
+.search-input-large:focus {
+  border-color: var(--accent-primary);
+  outline: 2px solid var(--accent-primary);
+  outline-offset: -2px;
+}
+.search-input-large::placeholder { color: var(--text-faint); }
+
+.search-meta {
+  font-family: var(--font-ui);
+  font-size: var(--text-sm);
+  color: var(--text-dim);
+  padding: var(--space-3) 0;
+}
+.search-results { margin-top: var(--space-4); }
+
+.search-result {
+  display: block;
+  padding: var(--space-3) var(--space-5);
+  border-bottom: var(--border-subtle);
+  cursor: pointer;
+}
+.search-result:hover { background: var(--bg-750); }
+
+.search-result-meta {
+  display: flex;
+  gap: var(--space-3);
+  align-items: center;
+  margin-bottom: var(--space-1);
+}
+.result-wf { font-family: var(--font-ui); font-size: var(--text-sm); color: var(--text-secondary); font-weight: 500; }
+.result-run-id { font-family: var(--font-mono); font-size: var(--text-xs); color: var(--text-dim); }
+.result-ts { font-family: var(--font-mono); font-size: var(--text-xs); color: var(--text-faint); margin-left: auto; }
+
+.search-result-event { font-family: var(--font-mono); font-size: var(--text-sm); color: var(--accent-primary); }
+.search-result-step { font-family: var(--font-mono); font-size: var(--text-sm); color: var(--text-muted); margin-left: var(--space-2); }
+.search-result-snippet {
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+  margin-top: var(--space-1);
+  word-break: break-all;
+}
+.search-result-snippet mark {
+  background: var(--color-warning-bg);
+  color: var(--color-warning-text);
+  border-radius: var(--radius-sm);
+  padding: 0 var(--space-1);
+}
+.search-load-more {
+  display: block;
+  width: 100%;
+  padding: var(--space-3);
+  background: var(--bg-700);
+  border: none;
+  border-radius: var(--radius-sm);
+  font-family: var(--font-ui);
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  cursor: pointer;
+  margin-top: var(--space-4);
+}
+.search-load-more:hover { background: var(--bg-600); }

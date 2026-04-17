@@ -216,6 +216,11 @@ kairos dashboard --log-dir dashboard_logs --open
 The dashboard serves a single-page web UI on `127.0.0.1:8420` with a token-authenticated API. Zero new dependencies — built on Python's stdlib `http.server`.
 
 **What you get:**
+- **Search across runs** — full-text search across all log files with highlighted match results and pagination
+- **Duration flame chart** — Gantt-style SVG timeline of step execution with hover tooltips and click-to-scroll
+- **Retry timeline** — horizontal card chain showing attempt progression with backoff delays and expandable error context
+- **Validation detail panel** — field-by-field pass/fail table with expandable error messages, replacing raw JSON
+- **Keyboard shortcuts** — `j`/`k` navigation, `Enter`/`Escape`, `/` to search, `?` for help overlay, `r` to refresh, `e` to expand/collapse
 - **Step dependency graph** — interactive SVG DAG with color-coded nodes by status, click-to-scroll navigation, foreach badges
 - **Step inspector** — click "Inspect" on any step to see Input/Output/Validation data in a tabbed panel
 - **Export** — download run data as JSON or CSV, copy the API URL for scripting
@@ -411,7 +416,7 @@ python examples/scoped_state.py
 | Dashboard (`kairos dashboard` — localhost web UI) | Done |
 | Plugin System | Planned |
 
-1,626 tests passing, 99% coverage across 20 source files.
+1,804 tests passing, 99% coverage across 20 source files.
 
 ---
 

@@ -1,6 +1,6 @@
 """Kairos — Security-hardened, model-agnostic SDK for contract-enforced AI workflows."""
 
-__version__ = "0.4.5"
+__version__ = "0.4.6"
 
 # Public enums
 # Model adapter base types — importable from kairos directly per CLAUDE.md (FIX 2)
