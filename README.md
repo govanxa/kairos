@@ -12,6 +12,11 @@
 
 **Security-hardened, model-agnostic Python SDK for contract-enforced AI workflows with automatic recovery.**
 
+
+<p align="center">
+  <img src="examples/assets/demo.gif" alt="Kairos blocking bad data with contract validation" width="900" />
+</p>
+
 Kairos wraps around any LLM and enforces a disciplined execution loop:
 
 ```
