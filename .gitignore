@@ -35,3 +35,8 @@ Thumbs.db
 
 #gif
 demo.tape
+
+# Closed-source marketing site — extracted to private repo `govanxa/kairos-ai` (ADR-010).
+# Nested-Git pattern: getkairos.dev/ is its own private repo with its own .git/.
+# This rule keeps website source out of the public Kairos repo's history.
+/getkairos.dev/
