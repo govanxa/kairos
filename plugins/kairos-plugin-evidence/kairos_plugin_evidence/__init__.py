@@ -1,19 +1,26 @@
 """kairos-plugin-evidence — Evidence Engine plugin for the Kairos SDK.
 
 Public surface: MANIFEST (the entry-point target for kairos.plugins) plus
-re-exports of the contracts public API for ergonomic top-level imports.
+re-exports of the contracts and content_gate public API for ergonomic imports.
 
 Example::
 
     from kairos_plugin_evidence import EVIDENCE_PACKET, make_packet
+    from kairos_plugin_evidence import gate_documents, registrable_domain
 
-MANIFEST carries empty steps/validators at C1; C2–C4 append their step actions.
+MANIFEST carries content_gate at C2; C3–C4 append their step actions.
 """
 
 from __future__ import annotations
 
 from kairos.plugins.registry import build_manifest
 
+from kairos_plugin_evidence.content_gate import (
+    REJECTION_REASONS,
+    content_gate,
+    gate_documents,
+    registrable_domain,
+)
 from kairos_plugin_evidence.contracts import (
     BUILDER_OUTPUT,
     CLAIM_RECORD,
@@ -49,6 +56,11 @@ from kairos_plugin_evidence.contracts import (
 __all__ = [
     # Manifest — entry-point target (B2 requirement)
     "MANIFEST",
+    # C2 content gate
+    "content_gate",
+    "gate_documents",
+    "registrable_domain",
+    "REJECTION_REASONS",
     # Versioning
     "PACKET_VERSION",
     "SUPPORTED_PACKET_VERSIONS",
@@ -90,12 +102,12 @@ __all__ = [
 #   [project.entry-points."kairos.plugins"]
 #   evidence = "kairos_plugin_evidence:MANIFEST"
 #
-# Steps and validators are empty at C1; C2–C4 register their @step_plugin callables.
+# C2 registers content_gate; C3–C4 register their @step_plugin callables.
 MANIFEST = build_manifest(
     name="evidence",
     version="0.1.0",
     description="Evidence Engine — contract-validated evidence evaluation for Kairos workflows.",
     requires_kairos=">=0.5,<0.6",
-    steps=(),
+    steps=(content_gate,),
     validators=(),
 )

@@ -874,7 +874,7 @@ class TestSchemaConformance:
         assert CLAIM_RECORD.validate(claim).valid
 
     def test_manifest_is_plugin_manifest_with_correct_name(self) -> None:
-        """MANIFEST is a PluginManifest with name='evidence' and empty steps."""
+        """MANIFEST is a PluginManifest with name='evidence'; C2 adds content_gate step."""
         from kairos.plugins.registry import PluginManifest
 
         from kairos_plugin_evidence import MANIFEST
@@ -883,7 +883,8 @@ class TestSchemaConformance:
         assert MANIFEST.name == "evidence"
         assert MANIFEST.version == "0.1.0"
         assert MANIFEST.requires_kairos == ">=0.5,<0.6"
-        assert MANIFEST.steps == {}
+        # C2 registered content_gate; C3–C4 will add further steps.
+        assert "content_gate" in MANIFEST.steps
         assert MANIFEST.validators == {}
 
     def test_manifest_describe_is_json_safe(self) -> None:
