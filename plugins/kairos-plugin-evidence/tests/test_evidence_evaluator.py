@@ -1966,8 +1966,8 @@ class TestPacketSerialization:
         for src in packet["sources"]:
             json.dumps(src)  # must not raise
 
-    def test_manifest_describes_all_three_steps(self) -> None:
-        """MANIFEST.describe() lists content_gate, claim_extractor, evidence_evaluator.
+    def test_manifest_describes_all_four_steps(self) -> None:
+        """MANIFEST.describe() lists all four steps (C4 adds belief_revision_builder).
         describe() returns {"steps": {step_name: {...}, ...}} — a dict keyed by name.
         """
         from kairos_plugin_evidence import MANIFEST
@@ -1978,12 +1978,15 @@ class TestPacketSerialization:
         assert "content_gate" in step_names
         assert "claim_extractor" in step_names
         assert "evidence_evaluator" in step_names
+        assert "belief_revision_builder" in step_names
 
-    def test_manifest_step_count_is_three(self) -> None:
+    def test_manifest_step_count_is_four(self) -> None:
+        """MANIFEST has 4 steps after C4 (belief_revision_builder) was added."""
         from kairos_plugin_evidence import MANIFEST
 
         described = MANIFEST.describe()
-        assert len(described["steps"]) == 3
+        assert len(described["steps"]) == 4
+        assert "belief_revision_builder" in described["steps"]
 
     def test_manifest_evaluator_has_output_contract(self) -> None:
         from kairos_plugin_evidence import MANIFEST

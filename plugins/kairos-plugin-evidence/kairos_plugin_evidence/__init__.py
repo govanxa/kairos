@@ -1,23 +1,26 @@
 """kairos-plugin-evidence — Evidence Engine plugin for the Kairos SDK.
 
 Public surface: MANIFEST (the entry-point target for kairos.plugins) plus
-re-exports of the contracts and content_gate public API for ergonomic imports.
+re-exports of the contracts and step/workflow public API for ergonomic imports.
 
 Example::
 
     from kairos_plugin_evidence import EVIDENCE_PACKET, make_packet
     from kairos_plugin_evidence import gate_documents, registrable_domain
     from kairos_plugin_evidence import make_evidence_evaluator, TrustPolicy
+    from kairos_plugin_evidence import render_working_context, build_reference_workflow
 
-MANIFEST carries all three C3 step actions: content_gate, claim_extractor,
-evidence_evaluator. C4 (belief_revision_builder) appends its step in a future
-slice.
+MANIFEST carries all four step actions (C2–C4) and the reference workflow factory.
 """
 
 from __future__ import annotations
 
 from kairos.plugins.registry import build_manifest
 
+from kairos_plugin_evidence.belief_revision import (
+    belief_revision_builder,
+    render_working_context,
+)
 from kairos_plugin_evidence.claim_extractor import claim_extractor, extract_claims
 from kairos_plugin_evidence.content_gate import (
     REJECTION_REASONS,
@@ -69,10 +72,16 @@ from kairos_plugin_evidence.evidence_evaluator import (
     normalize_value,
     resolve_as_of,
 )
+from kairos_plugin_evidence.workflows import build_reference_workflow
 
 __all__ = [
     # Manifest — entry-point target (B2 requirement)
     "MANIFEST",
+    # C4 belief revision builder
+    "belief_revision_builder",
+    "render_working_context",
+    # C4 reference workflow factory
+    "build_reference_workflow",
     # C3 claim extractor
     "claim_extractor",
     "extract_claims",
@@ -136,12 +145,14 @@ __all__ = [
 #   [project.entry-points."kairos.plugins"]
 #   evidence = "kairos_plugin_evidence:MANIFEST"
 #
-# C2: content_gate; C3: claim_extractor + evidence_evaluator; C4: builder.
+# C2: content_gate; C3: claim_extractor + evidence_evaluator; C4: belief_revision_builder.
+# MANIFEST.workflows["reference"] = build_reference_workflow (plugin-system spec §11 slot).
 MANIFEST = build_manifest(
     name="evidence",
     version="0.1.0",
     description="Evidence Engine — contract-validated evidence evaluation for Kairos workflows.",
     requires_kairos=">=0.5,<0.6",
-    steps=(content_gate, claim_extractor, evidence_evaluator),
+    steps=(content_gate, claim_extractor, evidence_evaluator, belief_revision_builder),
     validators=(),
+    workflows={"reference": build_reference_workflow},
 )
