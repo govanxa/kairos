@@ -57,6 +57,17 @@ from kairos.logger import (
 # Plan
 from kairos.plan import TaskGraph
 
+# Plugins
+from kairos.plugins.registry import (
+    PluginManifest,
+    StepPluginSpec,
+    build_manifest,
+    discover_plugins,
+    load_plugin,
+    step_plugin,
+    validator_plugin,
+)
+
 # Schema
 from kairos.schema import ContractPair, FieldValidationError, Schema, ValidationResult
 
@@ -170,4 +181,12 @@ __all__ = [
     "ModelAdapter",
     "ModelResponse",
     "TokenUsage",
+    # Plugins
+    "PluginManifest",
+    "StepPluginSpec",
+    "build_manifest",
+    "discover_plugins",
+    "load_plugin",
+    "step_plugin",
+    "validator_plugin",
 ]

@@ -132,6 +132,12 @@ ignore_missing_imports = true
 disallow_untyped_decorators = false
 warn_unused_ignores = false
 
+# importlib.metadata types use Any-typed iterables; attr-defined ignores
+# are needed for __kairos_plugin_step__ / __kairos_plugin_validator__ dynamic attrs.
+[[tool.mypy.overrides]]
+module = "kairos.plugins.registry"
+warn_unused_ignores = false
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = ["test_*.py"]
@@ -147,7 +153,7 @@ extraPaths = ["."]
 
 [tool.coverage.run]
 source = ["kairos"]
-omit = ["kairos/cli.py", "kairos/plugins/*", "kairos/interop/*"]
+omit = ["kairos/cli.py", "kairos/interop/*"]
 
 [tool.coverage.report]
 fail_under = 90

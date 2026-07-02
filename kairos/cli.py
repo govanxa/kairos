@@ -1095,6 +1095,64 @@ def dashboard(
 
 
 # ---------------------------------------------------------------------------
+# plugin sub-app
+# ---------------------------------------------------------------------------
+
+plugin_app = typer.Typer(
+    name="plugin",
+    help="Inspect installed Kairos plugins.",
+    no_args_is_help=True,
+    add_completion=False,
+)
+app.add_typer(plugin_app, name="plugin")
+
+
+@plugin_app.command("list")  # type: ignore[misc]
+def plugin_list(
+    describe: Annotated[
+        bool,
+        typer.Option(
+            "--describe",
+            help="Load each manifest and show descriptions (executes plugin code).",
+        ),
+    ] = False,
+) -> None:
+    """List installed Kairos plugins.
+
+    By default shows only metadata (no plugin code is executed).
+    Pass --describe to load each manifest and display step descriptions.
+    """
+    from kairos.plugins.registry import _list_plugin_entries, load_plugin  # noqa: PLC0415
+
+    entries = _list_plugin_entries()
+    if not entries:
+        typer.echo("No kairos.plugins packages installed.")
+        raise typer.Exit(code=0)
+
+    for entry in entries:
+        dist_name = entry["dist_name"]
+        version = entry["version"]
+        ep_name = entry["ep_name"]
+        if describe:
+            typer.echo(
+                f"Note: --describe executes plugin code from {dist_name!r}.",
+                err=True,
+            )
+            try:
+                manifest = load_plugin(dist_name)
+                typer.echo(f"{manifest.name}  v{manifest.version}  {manifest.description}")
+                for step_key, spec in manifest.steps.items():
+                    typer.echo(f"  step: {step_key}  {spec.description}")
+            except Exception as exc:  # noqa: BLE001
+                err_type, err_msg = sanitize_exception(exc)
+                typer.echo(f"  Error loading {dist_name!r}: {err_type}: {err_msg}", err=True)
+        else:
+            typer.echo(f"{dist_name}  v{version}  [{ep_name}]")
+
+    raise typer.Exit(code=0)
+
+
+# ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
 
