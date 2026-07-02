@@ -1,0 +1,23 @@
+{
+  "query": "Was the international technology framework adopted at the June 2026 summit?",
+  "as_of": "2026-07-01",
+  "documents": [
+    {
+      "url": "https://technews.org/framework-adoption",
+      "title": "Technology Framework Adopted at Summit",
+      "text": "The international technology framework was adopted at the June 2026 summit by delegates from 30 countries, marking a new era of policy coordination."
+    },
+    {
+      "url": "https://govwatch.net/tech-framework-vote",
+      "title": "Framework Vote Results Published",
+      "text": "The international technology framework was adopted at the June 2026 summit. Official records confirm the majority vote result and the adoption enters into effect immediately."
+    }
+  ],
+  "claims": ["The international technology framework was adopted at the June 2026 summit"],
+  "expected": {
+    "overall_verdict": "verified",
+    "claim_verdict": "supported",
+    "grounded_answer_contains": "adopted",
+    "refusal_answer_contains": "training"
+  }
+}

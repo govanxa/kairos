@@ -138,10 +138,12 @@ python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
 addopts = "-v --tb=short"
+pythonpath = ["."]
 
 [tool.pyright]
 pythonVersion = "3.11"
 typeCheckingMode = "strict"
+extraPaths = ["."]
 
 [tool.coverage.run]
 source = ["kairos"]
