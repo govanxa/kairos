@@ -1,6 +1,6 @@
 """Evidence Engine contracts — schemas, enums, rank tables, derivation functions, versioning.
 
-This is the C1 production promotion of the A1 spike (examples/evidence_engine/contracts.py).
+This is the C1 production promotion of the Evidence Engine A1 concept spike.
 Everything downstream in the kairos-ai-evidence package imports from here; nothing
 redefines a field (02 §4).
 

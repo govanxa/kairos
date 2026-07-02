@@ -385,7 +385,7 @@ def sanitize_path(name: str, base_dir: str | None = None) -> str:
 
 # ---------------------------------------------------------------------------
 # Untrusted-text gate primitives (B1)
-# Promoted from examples/evidence_engine/untrusted_text.py.
+# Promoted from the Evidence Engine A1 concept spike.
 # Reference: docs/projects/evidence-engine/blueprints/blueprint-b1-untrusted-text.md
 # ---------------------------------------------------------------------------
 
