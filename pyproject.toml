@@ -78,6 +78,20 @@ packages = ["kairos"]
 # dashboard_ui/ is inside kairos/ — hatchling auto-includes it.
 # No force-include or package-data needed.
 
+# Explicit sdist allowlist. Hatchling's default sdist sweeps the whole working tree
+# (including gitignored internal dirs like docs/, .claude/, CLAUDE.md, and the separate
+# plugins/ package). Ship ONLY the core package + public metadata so nothing internal
+# is published to PyPI.
+[tool.hatch.build.targets.sdist]
+include = [
+    "/kairos",
+    "/README.md",
+    "/GETTING_STARTED.md",
+    "/CONTRIBUTING.md",
+    "/LICENSE",
+    "/pyproject.toml",
+]
+
 # --- Tool Configuration ---
 
 [tool.ruff]
