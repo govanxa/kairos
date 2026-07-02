@@ -1281,6 +1281,31 @@ web-search MCP, a search API, `requests`, a scraper, or a local corpus. There's 
 requirement and no framework lock-in — if you can build a list of
 `{url, content, fetched_at}` dicts, you can use the Evidence Engine.
 
+### Runnable examples
+
+The plugin ships example scripts in its `examples/` directory. The first runs fully offline;
+the rest talk to a local model (LM Studio, Ollama, llama.cpp — any OpenAI-compatible server):
+
+| Script | What it shows | Needs |
+|---|---|---|
+| `quickstart.py` | The G1–G4 acceptance demo, scripted model | nothing (offline) |
+| `local_smoke_test.py` | Can Kairos reach your local model? | a local server |
+| `local_verified_demo.py` | Bare-vs-grounded A/B on an agreed fact → `verified` | a local server |
+| `local_conflict_demo.py` | Disagreeing sources → `conflicting` / `[DISPUTED]` | a local server |
+| `local_mcp_demo.py` | Feed real web-search/MCP results through the pipeline | a local server |
+
+Point them at your server with two environment variables, then run:
+
+```bash
+# PowerShell — set your model id (list ids with: curl http://localhost:1234/v1/models)
+$env:KAIROS_DEMO_MODEL = "qwen2.5-7b-instruct"
+$env:KAIROS_DEMO_BASE_URL = "http://localhost:1234/v1"   # LM Studio; 11434 Ollama; 8080 llama.cpp
+python examples/local_verified_demo.py
+```
+
+Each demo prints the pipeline verdict, the `working_context` block, and the model's answer
+**with and without** it — so you can see the difference the firewall makes on your own model.
+
 For the complete testing walkthrough — LM Studio / Ollama / llama.cpp server setup, the
 scoped-state hardened variant, and both the MCP and no-MCP retrieval routes — see the
 Evidence Engine testing guide that ships with the plugin.
