@@ -1344,7 +1344,7 @@ class TestVersionBump:
         """kairos.__version__ must match the current release."""
         import kairos
 
-        assert kairos.__version__ == "0.4.6"
+        assert kairos.__version__ == "0.5.0"
 
 
 class TestEdgeCases:

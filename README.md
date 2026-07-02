@@ -385,12 +385,52 @@ python examples/scoped_state.py
 | | CLI Runner | `kairos run`, `kairos validate`, `kairos version` with S13 module import security |
 | | CLI Inspect | `kairos inspect` — view past runs from `.jsonl` logs with colored output and filtering |
 | | Dashboard | `kairos dashboard` — localhost web UI with dependency graph, step inspector, export, run diff, token auth (S17) |
+| **Plugins** | Plugin Runtime | `load_plugin` / `discover_plugins` — allowlist-gated, containment-checked, no auto-discovery (S16) |
+| | Evidence Engine | `kairos-ai-evidence` — contract-validated evidence evaluation; a firewall between web-search results and the model prompt |
+
+---
+
+## Evidence Engine plugin
+
+`kairos-ai-evidence` is a firewall between web-search results and your model's prompt.
+Local models routinely retrieve a correct, current fact and then refuse it — "that's
+beyond my training cutoff." The problem isn't retrieval; it's **integration**. The Evidence
+Engine takes documents you already fetched (from an MCP, a search API, `requests`, anything)
+and runs them through four deterministic, contract-enforced steps:
+
+```
+content_gate → claim_extractor → evidence_evaluator → belief_revision_builder
+```
+
+The output is an injection-safe `working_context` block you prepend to your prompt: what
+independent sources actually support, with deterministic verdicts (`verified` /
+`conflicting` / `insufficient`) and confidence — **no model-emitted scores**. Conflicting
+sources surface as `[DISPUTED]` instead of the model silently picking a side, and an
+attacker's document cannot forge a verdict marker into the context.
+
+```python
+from kairos_ai_evidence import build_reference_workflow
+
+wf = build_reference_workflow()
+result = wf.run({
+    "raw_documents": my_fetched_docs,          # [{url, content, fetched_at, ...}]
+    "claims": ["the base interest rate is 4.25%"],
+    "query": "What is the current base interest rate?",
+    "as_of": "2026-07-02",                     # machine-stamped temporal anchor
+})
+working_context = result.final_state["working_context_bundle"]["working_context"]
+# prepend working_context to your model prompt and ask your question
+```
+
+Full walkthrough — install, LM Studio / Ollama / llama.cpp setup, MCP and no-MCP routes —
+in the [Getting Started guide](GETTING_STARTED.md#14-evidence-engine-plugin) and the
+[plugin README](plugins/kairos-ai-evidence/README.md).
 
 ---
 
 ## Status
 
-**MVP COMPLETE.** All 12 modules implemented and passing. Built with strict TDD (tests before code) and a full agent pipeline (architect, developer, code review, security audit, QA) for every module. Published to [PyPI](https://pypi.org/project/kairos-ai/) as `kairos-ai` v0.1.0.
+**MVP COMPLETE, plus Adapters, Observability, and a Plugin System.** All modules are built with strict TDD (tests before code) and a full agent pipeline (architect, developer, code review, security audit, QA) for every module. Published to [PyPI](https://pypi.org/project/kairos-ai/) as `kairos-ai` — current version **0.5.0**, which adds the plugin runtime and the first Evidence Engine plugin.
 
 **MVP — 12 of 12 modules complete**
 
@@ -419,9 +459,15 @@ python examples/scoped_state.py
 | CLI Runner (`kairos run`, `kairos validate`, `kairos version`) | Done |
 | CLI Inspect (`kairos inspect` — view past runs from log files) | Done |
 | Dashboard (`kairos dashboard` — localhost web UI) | Done |
-| Plugin System | Planned |
+| Plugin System (`load_plugin`, `discover_plugins`, `kairos plugin list`) | Done |
 
-1,804 tests passing, 99% coverage across 20 source files.
+**Plugins**
+
+| Package | Status |
+|---|---|
+| `kairos-ai-evidence` (Evidence Engine — contract-validated evidence evaluation) | v0.1 feature-complete |
+
+**2,150 tests passing** in the core SDK (99% coverage), plus **588 tests** in the `kairos-ai-evidence` plugin (99% coverage). Every module cleared the full agent pipeline — code review, security audit, and QA.
 
 ---
 

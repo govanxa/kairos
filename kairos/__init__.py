@@ -1,6 +1,6 @@
 """Kairos — Security-hardened, model-agnostic SDK for contract-enforced AI workflows."""
 
-__version__ = "0.4.6"
+__version__ = "0.5.0"
 
 # Public enums
 # Model adapter base types — importable from kairos directly per CLAUDE.md (FIX 2)
@@ -57,16 +57,34 @@ from kairos.logger import (
 # Plan
 from kairos.plan import TaskGraph
 
+# Plugins
+from kairos.plugins.registry import (
+    PluginManifest,
+    StepPluginSpec,
+    build_manifest,
+    discover_plugins,
+    load_plugin,
+    step_plugin,
+    validator_plugin,
+)
+
 # Schema
 from kairos.schema import ContractPair, FieldValidationError, Schema, ValidationResult
 
 # Security utilities
 from kairos.security import (
     DEFAULT_SENSITIVE_PATTERNS,
+    FLAG_IMPERATIVE,
+    FLAG_ROLE_MARKER,
+    FLAG_TEMPLATE_TOKEN,
+    FLAG_TOOL_CALL,
+    INJECTION_FLAGS,
+    SanitizedText,
     redact_sensitive,
     sanitize_exception,
     sanitize_path,
     sanitize_retry_context,
+    sanitize_untrusted_text,
 )
 
 # State management
@@ -120,10 +138,17 @@ __all__ = [
     "ValidationResult",
     # Security utilities
     "DEFAULT_SENSITIVE_PATTERNS",
+    "FLAG_IMPERATIVE",
+    "FLAG_ROLE_MARKER",
+    "FLAG_TEMPLATE_TOKEN",
+    "FLAG_TOOL_CALL",
+    "INJECTION_FLAGS",
+    "SanitizedText",
     "redact_sensitive",
     "sanitize_exception",
     "sanitize_path",
     "sanitize_retry_context",
+    "sanitize_untrusted_text",
     # State management
     "ScopedStateProxy",
     "StateSnapshot",
@@ -156,4 +181,12 @@ __all__ = [
     "ModelAdapter",
     "ModelResponse",
     "TokenUsage",
+    # Plugins
+    "PluginManifest",
+    "StepPluginSpec",
+    "build_manifest",
+    "discover_plugins",
+    "load_plugin",
+    "step_plugin",
+    "validator_plugin",
 ]

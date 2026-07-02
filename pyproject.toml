@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "kairos-ai"
-version = "0.4.6"
+version = "0.5.0"
 description = "Security-hardened, model-agnostic Python SDK for contract-enforced AI agent workflows"
 readme = "README.md"
 license = "Apache-2.0"
@@ -78,6 +78,20 @@ packages = ["kairos"]
 # dashboard_ui/ is inside kairos/ — hatchling auto-includes it.
 # No force-include or package-data needed.
 
+# Explicit sdist allowlist. Hatchling's default sdist sweeps the whole working tree
+# (including gitignored internal dirs like docs/, .claude/, CLAUDE.md, and the separate
+# plugins/ package). Ship ONLY the core package + public metadata so nothing internal
+# is published to PyPI.
+[tool.hatch.build.targets.sdist]
+include = [
+    "/kairos",
+    "/README.md",
+    "/GETTING_STARTED.md",
+    "/CONTRIBUTING.md",
+    "/LICENSE",
+    "/pyproject.toml",
+]
+
 # --- Tool Configuration ---
 
 [tool.ruff]
@@ -132,20 +146,28 @@ ignore_missing_imports = true
 disallow_untyped_decorators = false
 warn_unused_ignores = false
 
+# importlib.metadata types use Any-typed iterables; attr-defined ignores
+# are needed for __kairos_plugin_step__ / __kairos_plugin_validator__ dynamic attrs.
+[[tool.mypy.overrides]]
+module = "kairos.plugins.registry"
+warn_unused_ignores = false
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
 addopts = "-v --tb=short"
+pythonpath = ["."]
 
 [tool.pyright]
 pythonVersion = "3.11"
 typeCheckingMode = "strict"
+extraPaths = ["."]
 
 [tool.coverage.run]
 source = ["kairos"]
-omit = ["kairos/cli.py", "kairos/plugins/*", "kairos/interop/*"]
+omit = ["kairos/cli.py", "kairos/interop/*"]
 
 [tool.coverage.report]
 fail_under = 90
