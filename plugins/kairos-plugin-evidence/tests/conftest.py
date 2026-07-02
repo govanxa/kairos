@@ -1,4 +1,4 @@
-"""Shared fixtures for kairos-plugin-evidence test suite (C1 + C2).
+"""Shared fixtures for kairos-plugin-evidence test suite (C1 + C2 + C3).
 
 C1: Fixtures span ≥3 claim_kinds (numeric, temporal, entity_fact, event_outcome).
     Only one fixture family may be event-outcome related (generality rule — 07).
@@ -8,6 +8,9 @@ C2: Document fixtures span ≥3 content domains (climate/policy, public-health,
     fixtures embed INJECTION_SENTINEL. Benign-corpus fixture covers unicode/CJK,
     code, quotes, and multilingual text. Fake StepContext helpers for step-action
     tests (ported from the A1 spike conftest pattern).
+
+C3: Case 1/2 verbatim regression fixtures (real-world-cases.md §1/§2), trust-policy
+    fixtures (valid + malformed), sentinel-in-excerpt fixture (T6 security test).
 """
 
 from __future__ import annotations
@@ -465,3 +468,197 @@ def benign_corpus() -> list[dict[str, Any]]:
             "fetched_at": "2026-07-01T10:00:00Z",
         },
     ]
+
+
+# ---------------------------------------------------------------------------
+# C3 — Case 1 & Case 2 verbatim regression fixtures (real-world-cases.md)
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def case1_raw_docs() -> list[dict[str, Any]]:
+    """Case 1 verbatim — Belgium 3-2 Senegal, 5 MCP results (real-world-cases.md §1).
+
+    Five web_search results as they came from the Vanxa MCP (SearXNG backend)
+    on 2026-07-01.  Built through the real C2 gate_documents so sanitization
+    is exercised end-to-end.
+
+    Expected outcome after C3 evaluation:
+    - S1 (nytimes.com) → "3-2" extracted (text contains score)
+    - S2 (espn.com live blog) → [] extracted ("0 · 0" uses middle dot ·, not hyphen)
+    - S3 (espn.com final) → "3-2" extracted (explicit "final score 3-2")
+    - S4 (foxsports.com) → [] (no score in content)
+    - S5 (espn.com analysis) → [] (only date, no score)
+    - Supporting: S1 + S3 → groups {nytimes.com, espn.com} → independent_multi_source
+    - Overall verdict: verified; S2 "0 · 0" is non-supporting, not conflicting.
+    """
+    return [
+        {
+            "url": "https://theathletic.nytimes.com/live/belgium-senegal-2026",
+            "title": "Belgium Beat Senegal 3-2 at 2026 World Cup",
+            "content": (
+                "Belgium came from behind to beat Senegal 3-2 in a thrilling "
+                "World Cup group-stage match. Belgium vs Senegal ended 3-2."
+            ),
+            "fetched_at": "2026-07-01T15:00:00Z",
+        },
+        {
+            "url": "https://www.espn.com/soccer/live/belgium-senegal-live",
+            "title": "LIVE: World Cup 2026 — Belgium vs Senegal",
+            "content": (
+                "LIVE: World Cup 2026 updates. Belgium vs Senegal. "
+                "BEL. 0 · 0. SEN. Match currently in progress."
+            ),
+            "fetched_at": "2026-07-01T15:00:00Z",
+        },
+        {
+            "url": "https://www.espn.com/soccer/match/belgium-senegal-final",
+            "title": "Belgium vs Senegal Final Score",
+            "content": (
+                "Belgium vs Senegal final score 3-2, from July 1, 2026. "
+                "Belgium claimed a dramatic victory."
+            ),
+            "fetched_at": "2026-07-01T15:00:00Z",
+        },
+        {
+            "url": "https://www.foxsports.com/soccer/belgium-senegal-recap",
+            "title": "Belgium vs Senegal: Late Goal Recap",
+            "content": (
+                "LATE GAME COMEBACK. Belgium vs Senegal. A Late Goal secured "
+                "the match for Belgium after Senegal had equalized."
+            ),
+            "fetched_at": "2026-07-01T15:00:00Z",
+        },
+        {
+            "url": "https://www.espn.com/soccer/analysis/belgium-senegal-analysis",
+            "title": "Belgium vs Senegal — Match Analysis",
+            "content": (
+                "Belgium vs Senegal match analysis from July 1, 2026 on ESPN. "
+                "Senegal fought hard but Belgium ultimately prevailed."
+            ),
+            "fetched_at": "2026-07-01T15:00:00Z",
+        },
+    ]
+
+
+@pytest.fixture
+def case2_raw_docs() -> list[dict[str, Any]]:
+    """Case 2 verbatim — England 2-1 DR Congo, 5 MCP results (real-world-cases.md §2).
+
+    Five web_search results as they came from the Vanxa MCP on 2026-07-01.
+    Score "2-1" appears in FOUR titles — the key C3 design input (MUST-fix #3).
+
+    Expected outcome after C3 evaluation:
+    - S1 (cbssports.com) → [] (no score; "last 16" masked)
+    - S2 (espn.com) → "2-1" extracted from title
+    - S3 (aljazeera.com) → "2-1" extracted from title
+    - S4 (espn.com) → "2-1" extracted from title
+    - S5 (bbc.com) → "2-1" extracted from title
+    - Supporting: S2 + S3 + S4 + S5 → groups {espn.com, aljazeera.com, bbc.com}
+      → independent_multi_source → overall verified.
+    """
+    return [
+        {
+            "url": "https://www.cbssports.com/soccer/news/england-congo-world-cup",
+            "title": "England advance to last 16 with win over DR Congo",
+            "content": (
+                "England beat DR Congo with two late goals to fire the Three Lions "
+                "into the last 16 of the World Cup."
+            ),
+            "fetched_at": "2026-07-01T15:00:00Z",
+        },
+        {
+            "url": "https://www.espn.com/soccer/match/england-congo-dr-result",
+            "title": "England 2-1 Congo DR: World Cup second round analysis",
+            "content": (
+                "6 hours ago. England's come-from-behind victory against DR Congo "
+                "at the World Cup was sealed in extra time."
+            ),
+            "fetched_at": "2026-07-01T15:00:00Z",
+        },
+        {
+            "url": "https://www.aljazeera.com/sports/2026/7/1/england-congo-result",
+            "title": "England vs DR Congo 2-1: World Cup result and analysis",
+            "content": (
+                "7 hours ago. This page is now closed. England defeated DR Congo "
+                "in the World Cup knockout stage."
+            ),
+            "fetched_at": "2026-07-01T15:00:00Z",
+        },
+        {
+            "url": "https://www.espn.com/soccer/match/england-congo-final-score",
+            "title": "England 2-1 Congo DR (Jul 1, 2026) Final Score",
+            "content": (
+                "England vs DR Congo final score 2-1, from July 1, 2026. "
+                "England won the match convincingly."
+            ),
+            "fetched_at": "2026-07-01T15:00:00Z",
+        },
+        {
+            "url": "https://www.bbc.com/sport/football/england-2-1-dr-congo-highlights",
+            "title": "England 2-1 DR Congo Highlights - 1 July 2026",
+            # Verbatim snippet from real-world-cases.md §2 S5: score is in title
+            # only; snippet has no score.  This tests title-only extraction.
+            "content": "Kane scores twice. Published 7 hours ago.",
+            "fetched_at": "2026-07-01T15:00:00Z",
+        },
+    ]
+
+
+# ---------------------------------------------------------------------------
+# C3 — Trust policy fixtures
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def policy_pin_gov() -> dict[str, Any]:
+    """Trust policy that pins a .com domain to official tier (for pin-promotes tests)."""
+    return {"pin": ["pinned-source.com"]}
+
+
+@pytest.fixture
+def policy_deny_domain() -> dict[str, Any]:
+    """Trust policy that denies a specific domain (for deny-drops tests)."""
+    return {"deny": ["denied-source.com"]}
+
+
+@pytest.fixture
+def policy_tier_override() -> dict[str, Any]:
+    """Trust policy with an explicit tier override."""
+    return {"tier_overrides": {"internal-wiki.example.com": "official"}}
+
+
+@pytest.fixture
+def policy_with_aliases() -> dict[str, Any]:
+    """Trust policy using spike aliases 'pins'/'denies' (both accepted)."""
+    return {"pins": ["trusted.org"], "denies": ["spam.net"]}
+
+
+# ---------------------------------------------------------------------------
+# C3 — Sentinel-in-excerpt fixture (T6 security test)
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def source_with_sentinel_excerpt() -> dict[str, Any]:
+    """SourceRecord whose excerpt contains INJECTION_SENTINEL.
+
+    Used to verify the sentinel never leaks into warnings, conflicts, or
+    claim notes in the evaluator's output (T6: no raw content in structured
+    outputs).
+    """
+    return make_source_record(
+        source_id="S1",
+        url="https://adversarial.sentinel.example.com/data",
+        domain="sentinel.example.com",
+        title="Numeric Data Report",
+        fetched_at="2026-07-01T10:00:00Z",
+        published_at=None,
+        independence_group="sentinel.example.com",
+        provenance_tier=ProvenanceTier.AGGREGATOR,
+        freshness=Freshness.UNDATED,
+        injection_flags=[],
+        excerpt=(
+            f"The rate reached 42 percent. {INJECTION_SENTINEL} Additional context follows here."
+        ),
+    )

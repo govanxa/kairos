@@ -7,14 +7,18 @@ Example::
 
     from kairos_plugin_evidence import EVIDENCE_PACKET, make_packet
     from kairos_plugin_evidence import gate_documents, registrable_domain
+    from kairos_plugin_evidence import make_evidence_evaluator, TrustPolicy
 
-MANIFEST carries content_gate at C2; C3–C4 append their step actions.
+MANIFEST carries all three C3 step actions: content_gate, claim_extractor,
+evidence_evaluator. C4 (belief_revision_builder) appends its step in a future
+slice.
 """
 
 from __future__ import annotations
 
 from kairos.plugins.registry import build_manifest
 
+from kairos_plugin_evidence.claim_extractor import claim_extractor, extract_claims
 from kairos_plugin_evidence.content_gate import (
     REJECTION_REASONS,
     content_gate,
@@ -52,10 +56,40 @@ from kairos_plugin_evidence.contracts import (
     make_packet,
     make_source_record,
 )
+from kairos_plugin_evidence.evidence_evaluator import (
+    TrustPolicy,
+    assign_independence_groups,
+    classify_freshness,
+    classify_tier,
+    compose_warnings,
+    detect_conflicts,
+    evidence_evaluator,
+    extract_values,
+    make_evidence_evaluator,
+    normalize_value,
+    resolve_as_of,
+)
 
 __all__ = [
     # Manifest — entry-point target (B2 requirement)
     "MANIFEST",
+    # C3 claim extractor
+    "claim_extractor",
+    "extract_claims",
+    # C3 evidence evaluator — step action + factory + policy
+    "evidence_evaluator",
+    "make_evidence_evaluator",
+    "TrustPolicy",
+    # C3 extraction core
+    "extract_values",
+    "normalize_value",
+    # C3 classification + composition
+    "classify_tier",
+    "classify_freshness",
+    "assign_independence_groups",
+    "detect_conflicts",
+    "compose_warnings",
+    "resolve_as_of",
     # C2 content gate
     "content_gate",
     "gate_documents",
@@ -102,12 +136,12 @@ __all__ = [
 #   [project.entry-points."kairos.plugins"]
 #   evidence = "kairos_plugin_evidence:MANIFEST"
 #
-# C2 registers content_gate; C3–C4 register their @step_plugin callables.
+# C2: content_gate; C3: claim_extractor + evidence_evaluator; C4: builder.
 MANIFEST = build_manifest(
     name="evidence",
     version="0.1.0",
     description="Evidence Engine — contract-validated evidence evaluation for Kairos workflows.",
     requires_kairos=">=0.5,<0.6",
-    steps=(content_gate,),
+    steps=(content_gate, claim_extractor, evidence_evaluator),
     validators=(),
 )
