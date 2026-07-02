@@ -18,7 +18,7 @@ from typing import TYPE_CHECKING, Any
 from kairos.exceptions import ValidationError
 from kairos.plugins.registry import step_plugin
 
-from kairos_plugin_evidence.contracts import EXTRACTOR_OUTPUT, make_claim_record
+from kairos_ai_evidence.contracts import EXTRACTOR_OUTPUT, make_claim_record
 
 if TYPE_CHECKING:
     from kairos.step import StepContext

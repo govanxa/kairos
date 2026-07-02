@@ -1,14 +1,14 @@
-"""kairos-plugin-evidence — Evidence Engine plugin for the Kairos SDK.
+"""kairos-ai-evidence — Evidence Engine plugin for the Kairos SDK.
 
 Public surface: MANIFEST (the entry-point target for kairos.plugins) plus
 re-exports of the contracts and step/workflow public API for ergonomic imports.
 
 Example::
 
-    from kairos_plugin_evidence import EVIDENCE_PACKET, make_packet
-    from kairos_plugin_evidence import gate_documents, registrable_domain
-    from kairos_plugin_evidence import make_evidence_evaluator, TrustPolicy
-    from kairos_plugin_evidence import render_working_context, build_reference_workflow
+    from kairos_ai_evidence import EVIDENCE_PACKET, make_packet
+    from kairos_ai_evidence import gate_documents, registrable_domain
+    from kairos_ai_evidence import make_evidence_evaluator, TrustPolicy
+    from kairos_ai_evidence import render_working_context, build_reference_workflow
 
 MANIFEST carries all four step actions (C2–C4) and the reference workflow factory.
 """
@@ -17,18 +17,18 @@ from __future__ import annotations
 
 from kairos.plugins.registry import build_manifest
 
-from kairos_plugin_evidence.belief_revision import (
+from kairos_ai_evidence.belief_revision import (
     belief_revision_builder,
     render_working_context,
 )
-from kairos_plugin_evidence.claim_extractor import claim_extractor, extract_claims
-from kairos_plugin_evidence.content_gate import (
+from kairos_ai_evidence.claim_extractor import claim_extractor, extract_claims
+from kairos_ai_evidence.content_gate import (
     REJECTION_REASONS,
     content_gate,
     gate_documents,
     registrable_domain,
 )
-from kairos_plugin_evidence.contracts import (
+from kairos_ai_evidence.contracts import (
     BUILDER_OUTPUT,
     CLAIM_RECORD,
     EVALUATOR_INPUT,
@@ -59,7 +59,7 @@ from kairos_plugin_evidence.contracts import (
     make_packet,
     make_source_record,
 )
-from kairos_plugin_evidence.evidence_evaluator import (
+from kairos_ai_evidence.evidence_evaluator import (
     TrustPolicy,
     assign_independence_groups,
     classify_freshness,
@@ -72,7 +72,7 @@ from kairos_plugin_evidence.evidence_evaluator import (
     normalize_value,
     resolve_as_of,
 )
-from kairos_plugin_evidence.workflows import build_reference_workflow
+from kairos_ai_evidence.workflows import build_reference_workflow
 
 __all__ = [
     # Manifest — entry-point target (B2 requirement)
@@ -143,7 +143,7 @@ __all__ = [
 
 # MANIFEST is the entry-point target declared in pyproject.toml:
 #   [project.entry-points."kairos.plugins"]
-#   evidence = "kairos_plugin_evidence:MANIFEST"
+#   evidence = "kairos_ai_evidence:MANIFEST"
 #
 # C2: content_gate; C3: claim_extractor + evidence_evaluator; C4: belief_revision_builder.
 # MANIFEST.workflows["reference"] = build_reference_workflow (plugin-system spec §11 slot).

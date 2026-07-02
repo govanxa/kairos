@@ -32,7 +32,7 @@ from kairos.security import (
     sanitize_untrusted_text,
 )
 
-from kairos_plugin_evidence.contracts import (
+from kairos_ai_evidence.contracts import (
     GATE_OUTPUT,
     Freshness,
     ProvenanceTier,

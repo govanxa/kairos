@@ -1,4 +1,4 @@
-"""Shared fixtures for kairos-plugin-evidence test suite (C1 + C2 + C3).
+"""Shared fixtures for kairos-ai-evidence test suite (C1 + C2 + C3).
 
 C1: Fixtures span ≥3 claim_kinds (numeric, temporal, entity_fact, event_outcome).
     Only one fixture family may be event-outcome related (generality rule — 07).
@@ -22,7 +22,7 @@ import pytest
 from examples._fixtures import (
     INJECTION_SENTINEL as INJECTION_SENTINEL,  # single source of truth (ADV-3)
 )
-from kairos_plugin_evidence.contracts import (
+from kairos_ai_evidence.contracts import (
     ClaimKind,
     Confidence,
     Freshness,

@@ -1,4 +1,4 @@
-"""kairos-plugin-evidence workflows — reference workflow factory (C4).
+"""kairos-ai-evidence workflows — reference workflow factory (C4).
 
 Provides ``build_reference_workflow``: wires the four plugin steps with the
 02 §2 scoped-state walls (+ F2 extension for query/as_of). The answer/model
@@ -17,16 +17,16 @@ from typing import Any
 
 from kairos import Step, Workflow
 
-from kairos_plugin_evidence.belief_revision import belief_revision_builder
-from kairos_plugin_evidence.claim_extractor import claim_extractor
-from kairos_plugin_evidence.content_gate import content_gate
-from kairos_plugin_evidence.contracts import (
+from kairos_ai_evidence.belief_revision import belief_revision_builder
+from kairos_ai_evidence.claim_extractor import claim_extractor
+from kairos_ai_evidence.content_gate import content_gate
+from kairos_ai_evidence.contracts import (
     BUILDER_OUTPUT,
     EVALUATOR_OUTPUT,
     EXTRACTOR_OUTPUT,
     GATE_OUTPUT,
 )
-from kairos_plugin_evidence.evidence_evaluator import make_evidence_evaluator
+from kairos_ai_evidence.evidence_evaluator import make_evidence_evaluator
 
 # Default step names used in the reference workflow.
 _STEP_CONTENT_GATE: str = "content_gate"

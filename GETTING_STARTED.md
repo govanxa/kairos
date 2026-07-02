@@ -1160,6 +1160,133 @@ The dashboard is designed for **single-user local use**:
 
 ---
 
+## 14. Evidence Engine plugin
+
+Web search gives a model *text*; it doesn't give it *grounds to believe that text*. Local
+models routinely retrieve a correct, current fact and then refuse it — "that's beyond my
+training cutoff." That's an **integration** failure, not a retrieval one. The
+`kairos-ai-evidence` plugin is a **firewall between the internet and the model**: it
+takes documents you already fetched and turns them into an injection-safe, contract-validated
+prompt preamble with **deterministic verdicts** — no model-emitted scores.
+
+### Install
+
+The plugin is a separate package that depends on `kairos-ai`:
+
+```bash
+pip install "kairos-ai>=0.5,<0.6"
+pip install kairos-ai-evidence
+```
+
+Verify:
+
+```bash
+python -c "import kairos_ai_evidence; print('Evidence Engine ready!')"
+```
+
+### The pipeline
+
+Four deterministic steps, each with an enforced input/output contract:
+
+```
+content_gate  →  claim_extractor  →  evidence_evaluator  →  belief_revision_builder
+(sanitize +      (your claims →       (match claims to        (render the working-context
+ trust boundary)  ClaimRecords)        sources; derive          block for your prompt)
+                                       verdict + confidence)
+```
+
+`build_reference_workflow()` wires all four with scoped-state security walls and hands you a
+ready-to-run `Workflow`.
+
+### The one contract: the document shape
+
+You bring the documents. Each is a plain dict; the content gate reads these keys:
+
+| Key | Required | Notes |
+|---|---|---|
+| `url` | yes | Sanitized; a URL that changes under sanitization is rejected as untrustworthy. |
+| `content` / `text` / `snippet` | yes (one of) | First non-empty is the body — lets you pass search results verbatim. |
+| `fetched_at` | yes | ISO-8601 time you retrieved it. |
+| `title` | no | Titles often carry the factoid; the evaluator mines them. |
+| `published_at` | no | Drives the freshness heuristic if present. |
+
+### Run it
+
+```python
+from datetime import UTC, datetime
+from kairos import WorkflowStatus
+from kairos_ai_evidence import build_reference_workflow
+
+raw_documents = [
+    {
+        "url": "https://energydata.org/renewable-capacity-2026h1",
+        "title": "Renewable Energy Capacity Report H1 2026",
+        "content": "A total of 420 gigawatts of renewable energy capacity was added "
+                   "globally in the first half of 2026, setting a new record.",
+        "fetched_at": datetime.now(tz=UTC).isoformat(),
+    },
+    {
+        # A second, independent domain — corroboration needs distinct registrable
+        # domains. Two pages on the same site count as one source, not two.
+        "url": "https://statsreview.org/energy-stats-2026",
+        "title": "Energy Statistics Q2 2026",
+        "content": "A total of 420 gigawatts of new renewable capacity was added globally "
+                   "in the first half of 2026, consistent with prior projections.",
+        "fetched_at": datetime.now(tz=UTC).isoformat(),
+    },
+]
+
+wf = build_reference_workflow()
+result = wf.run({
+    "raw_documents": raw_documents,
+    "claims": ["420 gigawatts of renewable capacity was added globally in the first half of 2026"],
+    "query": "How much renewable capacity was added globally in the first half of 2026?",
+    "as_of": datetime.now(tz=UTC).date().isoformat(),   # machine-stamped, never user-typed
+})
+assert result.status is WorkflowStatus.COMPLETE
+
+packet = result.final_state["evidence_packet"]
+bundle = result.final_state["working_context_bundle"]
+
+print(packet["overall_verdict"])      # verified / conflicting / insufficient
+working_context = bundle["working_context"]   # prepend this to your model prompt
+```
+
+Then answer *from the evidence* — this call is yours (Claude, OpenAI, or a local model via
+`OpenAIAdapter`, see Section 9):
+
+```python
+query = "How much renewable capacity was added globally in the first half of 2026?"
+answer = adapter.call(f"{working_context}\n\nQUESTION: {query}").text
+```
+
+The A/B worth doing once: call the model with the bare `query`, then with `working_context`
+prepended. The bare call tends to hedge or refuse a current fact; the grounded call answers
+it and cites `[S1]`-style source keys. That delta is the whole product.
+
+### What to expect (v0.1 is deterministic matching)
+
+- **Factoid claims work best** — scores, dates, counts, named figures.
+- **`insufficient` is a feature.** If sources only vaguely touch your claim, the packet
+  refuses to bless it. A firewall that won't certify weak evidence is doing its job.
+- **Conflict is surfaced, not resolved.** Disagreeing sources yield `conflicting` +
+  `[DISPUTED]`, and the model is told to stay honest rather than guess.
+- **`high` confidence is rare and earned** — it needs independent multi-source agreement
+  from established domains with fresh dates.
+
+### Where the documents come from
+
+The plugin is retrieval-agnostic. Anything that produces the document shape above works: a
+web-search MCP, a search API, `requests`, a scraper, or a local corpus. There's no MCP
+requirement and no framework lock-in — if you can build a list of
+`{url, content, fetched_at}` dicts, you can use the Evidence Engine.
+
+For the complete testing walkthrough — LM Studio / Ollama / llama.cpp server setup, the
+scoped-state hardened variant, and both the MCP and no-MCP retrieval routes — see the
+Evidence Engine testing guide that ships with the plugin.
+
+---
+
 ## Next Steps
 
 - **Run the examples** in the `examples/` directory to see more patterns
@@ -1201,3 +1328,5 @@ The dashboard is designed for **single-user local use**:
 | `kairos inspect` | CLI: `kairos inspect ./logs/` | View past run details from `.jsonl` log files |
 | `kairos version` | CLI: `kairos version` | Print SDK version |
 | `kairos dashboard` | CLI: `kairos dashboard --log-dir ./logs` | Localhost web UI for run history |
+| `load_plugin` | `from kairos.plugins.registry import load_plugin` | Load an installed Kairos plugin (allowlist-gated) |
+| `build_reference_workflow` | `from kairos_ai_evidence import build_reference_workflow` | Evidence Engine — the 4-step evidence pipeline as a ready workflow |

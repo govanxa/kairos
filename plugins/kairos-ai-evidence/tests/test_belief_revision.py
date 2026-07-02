@@ -1,4 +1,4 @@
-"""Tests for kairos_plugin_evidence.belief_revision (C4) — unit suite.
+"""Tests for kairos_ai_evidence.belief_revision (C4) — unit suite.
 
 Test-after per the Evidence Engine exception (CLAUDE.md). Quality bar unchanged:
 90%+ coverage, failure-paths-first, security checklist, serialization round-trips.
@@ -21,7 +21,7 @@ from unittest.mock import patch
 
 import pytest
 
-from kairos_plugin_evidence.belief_revision import (
+from kairos_ai_evidence.belief_revision import (
     _OMIT_MARKER,
     ANTI_DISCLAIMER_LINE,
     ANTI_ROLEPLAY_LINE,
@@ -33,7 +33,7 @@ from kairos_plugin_evidence.belief_revision import (
     belief_revision_builder,
     render_working_context,
 )
-from kairos_plugin_evidence.contracts import (
+from kairos_ai_evidence.contracts import (
     BUILDER_OUTPUT,
     ClaimKind,
     Confidence,
@@ -238,7 +238,7 @@ class TestFailurePaths:
 
         with (
             patch(
-                "kairos_plugin_evidence.belief_revision.render_working_context",
+                "kairos_ai_evidence.belief_revision.render_working_context",
                 side_effect=RuntimeError("internal crash with /secret/path sk-key123"),
             ),
             pytest.raises(ExecutionError) as exc_info,
@@ -835,7 +835,7 @@ class TestBeliefRevisionSecurity:
 
         with (
             patch(
-                "kairos_plugin_evidence.belief_revision.render_working_context",
+                "kairos_ai_evidence.belief_revision.render_working_context",
                 side_effect=ValueError("sk-key-ABCD: internal error in /etc/secret/file.txt"),
             ),
             pytest.raises(ExecutionError) as exc_info,
@@ -849,7 +849,7 @@ class TestBeliefRevisionSecurity:
 
     def test_no_llm_or_network_import_in_module(self) -> None:
         """belief_revision.py must not import any LLM adapter or network library."""
-        mod = importlib.import_module("kairos_plugin_evidence.belief_revision")
+        mod = importlib.import_module("kairos_ai_evidence.belief_revision")
         forbidden = {"openai", "anthropic", "httpx", "requests", "aiohttp", "urllib.request"}
         imported = set(mod.__dict__.keys())
         # Check no forbidden top-level names were imported
@@ -1115,7 +1115,7 @@ class TestTruncationPriority:
 
         Returns (anchor_block, verdict_line, supported_claims, conflicting_claims, sources_by_id).
         """
-        from kairos_plugin_evidence.belief_revision import (
+        from kairos_ai_evidence.belief_revision import (
             ANTI_DISCLAIMER_LINE,
             ANTI_ROLEPLAY_LINE,
             TEMPORAL_ANCHOR,
@@ -1157,7 +1157,7 @@ class TestTruncationPriority:
         - At step-1 quota=0 WITH warnings (~5×71 chars): slightly over 8000 → step 1 fails.
         - At step-2 without warnings: fits within 8000 → step 2 returns (line 326 hit).
         """
-        from kairos_plugin_evidence.belief_revision import (
+        from kairos_ai_evidence.belief_revision import (
             _MAX_WORKING_CONTEXT,
             _OMIT_MARKER,
             _truncate,
@@ -1190,7 +1190,7 @@ class TestTruncationPriority:
         - Step 3 (no conflict detail) fits because dropping '[S#] reports: {val}' lines
           reduces the content enough.
         """
-        from kairos_plugin_evidence.belief_revision import (
+        from kairos_ai_evidence.belief_revision import (
             _MAX_WORKING_CONTEXT,
             _OMIT_MARKER,
             _truncate,
@@ -1228,7 +1228,7 @@ class TestTruncationPriority:
 
     def test_step1_excerpt_shrinking_triggered(self) -> None:
         """With 30+ claims at full-quota size, step 1 excerpt shrinking is triggered."""
-        from kairos_plugin_evidence.belief_revision import (
+        from kairos_ai_evidence.belief_revision import (
             _MAX_WORKING_CONTEXT,
             ANTI_DISCLAIMER_LINE,
             ANTI_ROLEPLAY_LINE,
@@ -1270,7 +1270,7 @@ class TestTruncationPriority:
 
     def test_step4_omit_marker_triggered(self) -> None:
         """With extremely many claims + long texts, step 4 (omit marker) is triggered."""
-        from kairos_plugin_evidence.belief_revision import (
+        from kairos_ai_evidence.belief_revision import (
             _MAX_WORKING_CONTEXT,
             _OMIT_MARKER,
             ANTI_DISCLAIMER_LINE,

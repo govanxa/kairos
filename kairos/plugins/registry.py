@@ -695,7 +695,7 @@ def load_plugin(name: str) -> PluginManifest:
     7. Audit log.
 
     Args:
-        name: Distribution name, e.g. "kairos-plugin-evidence".
+        name: Distribution name, e.g. "kairos-ai-evidence".
 
     Returns:
         The plugin's PluginManifest.

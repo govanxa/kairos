@@ -1,4 +1,4 @@
-"""Tests for kairos_plugin_evidence.content_gate — C2 trust boundary.
+"""Tests for kairos_ai_evidence.content_gate — C2 trust boundary.
 
 Test-after (Evidence Engine exception in CLAUDE.md). Failure paths first,
 then boundaries, happy paths, security, serialization — per CLAUDE.md priority.
@@ -18,7 +18,7 @@ import pytest
 from conftest import INJECTION_SENTINEL, _FakeCtx
 from kairos.exceptions import ExecutionError
 
-from kairos_plugin_evidence.content_gate import (
+from kairos_ai_evidence.content_gate import (
     _MAX_RAW_CONTENT_CHARS,
     _MAX_TOTAL_OUTPUT_CHARS,
     REJECTION_REASONS,
@@ -26,7 +26,7 @@ from kairos_plugin_evidence.content_gate import (
     gate_documents,
     registrable_domain,
 )
-from kairos_plugin_evidence.contracts import SOURCE_RECORD
+from kairos_ai_evidence.contracts import SOURCE_RECORD
 
 # ---------------------------------------------------------------------------
 # Module-level helpers — shared constants/classes imported from conftest;
@@ -596,9 +596,9 @@ class TestContentGateSecurity:
 
         # __init__.py shadows the submodule attribute with the function name;
         # use sys.modules to get the actual module object.
-        import kairos_plugin_evidence  # noqa: F401 — ensure package (and submodule) loaded
+        import kairos_ai_evidence  # noqa: F401 — ensure package (and submodule) loaded
 
-        cg_mod = sys.modules["kairos_plugin_evidence.content_gate"]
+        cg_mod = sys.modules["kairos_ai_evidence.content_gate"]
 
         assert not hasattr(cg_mod, "ModelAdapter")
         assert not hasattr(cg_mod, "openai")
@@ -881,7 +881,7 @@ class TestSerialization:
 
     def test_manifest_describes_content_gate(self) -> None:
         """MANIFEST.describe() includes content_gate with output_contract; input_contract None."""
-        from kairos_plugin_evidence import MANIFEST
+        from kairos_ai_evidence import MANIFEST
 
         desc = MANIFEST.describe()
         assert "content_gate" in desc["steps"], "content_gate not in MANIFEST steps"

@@ -1,4 +1,4 @@
-"""Tests for kairos_plugin_evidence.claim_extractor — C3 slice 1.
+"""Tests for kairos_ai_evidence.claim_extractor — C3 slice 1.
 
 Test-after (Evidence Engine exception, CLAUDE.md). Failure paths first, then
 boundary, happy/heuristic, serialization — per CLAUDE.md priority order.
@@ -16,12 +16,12 @@ import pytest
 from conftest import _FakeCtx
 from kairos.exceptions import ValidationError
 
-from kairos_plugin_evidence.claim_extractor import (
+from kairos_ai_evidence.claim_extractor import (
     _infer_claim_kind,
     claim_extractor,
     extract_claims,
 )
-from kairos_plugin_evidence.contracts import CLAIM_RECORD, ClaimKind, TimeSensitivity
+from kairos_ai_evidence.contracts import CLAIM_RECORD, ClaimKind, TimeSensitivity
 
 # ---------------------------------------------------------------------------
 # G1 — Failure paths (write first)
@@ -268,20 +268,20 @@ class TestBasicBehavior:
 
     def test_manifest_registers_claim_extractor(self) -> None:
         """MANIFEST.steps includes 'claim_extractor' after slice-1 wiring."""
-        from kairos_plugin_evidence import MANIFEST
+        from kairos_ai_evidence import MANIFEST
 
         assert "claim_extractor" in MANIFEST.steps
 
     def test_manifest_claim_extractor_has_output_contract(self) -> None:
         """MANIFEST claim_extractor step has EXTRACTOR_OUTPUT as output_contract."""
-        from kairos_plugin_evidence import EXTRACTOR_OUTPUT, MANIFEST
+        from kairos_ai_evidence import EXTRACTOR_OUTPUT, MANIFEST
 
         spec = MANIFEST.steps["claim_extractor"]
         assert spec.output_contract is EXTRACTOR_OUTPUT
 
     def test_manifest_claim_extractor_input_contract_is_none(self) -> None:
         """MANIFEST claim_extractor step has input_contract=None (DN-1)."""
-        from kairos_plugin_evidence import MANIFEST
+        from kairos_ai_evidence import MANIFEST
 
         spec = MANIFEST.steps["claim_extractor"]
         assert spec.input_contract is None
@@ -297,7 +297,7 @@ class TestClaimTextTruncation:
 
     def test_claim_exactly_2000_chars_kept_verbatim(self) -> None:
         """A claim of exactly 2000 chars is stored unchanged (boundary — not truncated)."""
-        from kairos_plugin_evidence.claim_extractor import _MAX_CLAIM_TEXT_LEN
+        from kairos_ai_evidence.claim_extractor import _MAX_CLAIM_TEXT_LEN
 
         text = "a" * _MAX_CLAIM_TEXT_LEN  # exactly 2000
         records = extract_claims([text])
@@ -306,7 +306,7 @@ class TestClaimTextTruncation:
 
     def test_claim_over_2000_chars_truncated_to_cap(self) -> None:
         """A claim of 2500 chars is silently truncated to exactly 2000 (SEV-002)."""
-        from kairos_plugin_evidence.claim_extractor import _MAX_CLAIM_TEXT_LEN
+        from kairos_ai_evidence.claim_extractor import _MAX_CLAIM_TEXT_LEN
 
         text = "b" * 2500
         records = extract_claims([text])
@@ -315,7 +315,7 @@ class TestClaimTextTruncation:
 
     def test_claim_at_2001_chars_truncated(self) -> None:
         """One char over the cap → truncated to the cap (exact boundary)."""
-        from kairos_plugin_evidence.claim_extractor import _MAX_CLAIM_TEXT_LEN
+        from kairos_ai_evidence.claim_extractor import _MAX_CLAIM_TEXT_LEN
 
         text = "c" * (_MAX_CLAIM_TEXT_LEN + 1)
         records = extract_claims([text])

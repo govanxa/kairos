@@ -34,8 +34,8 @@ from kairos.exceptions import ConfigError, ExecutionError
 from kairos.plugins.registry import step_plugin
 from kairos.security import sanitize_exception
 
-from kairos_plugin_evidence.content_gate import registrable_domain
-from kairos_plugin_evidence.contracts import (
+from kairos_ai_evidence.content_gate import registrable_domain
+from kairos_ai_evidence.contracts import (
     EVALUATOR_OUTPUT,
     Freshness,
     ProvenanceTier,

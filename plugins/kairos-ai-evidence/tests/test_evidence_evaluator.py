@@ -1,4 +1,4 @@
-"""Tests for kairos_plugin_evidence.evidence_evaluator — C3 complete.
+"""Tests for kairos_ai_evidence.evidence_evaluator — C3 complete.
 
 Groups (failure-paths first per TDD priority order):
   G1  Failure paths — ConfigError, empty inputs, sanitized ExecutionError.
@@ -24,10 +24,10 @@ import pytest
 from conftest import INJECTION_SENTINEL, _FakeCtx
 from kairos.exceptions import ConfigError, ExecutionError
 
-from kairos_plugin_evidence.claim_extractor import extract_claims
-from kairos_plugin_evidence.content_gate import gate_documents
-from kairos_plugin_evidence.contracts import make_source_record
-from kairos_plugin_evidence.evidence_evaluator import (
+from kairos_ai_evidence.claim_extractor import extract_claims
+from kairos_ai_evidence.content_gate import gate_documents
+from kairos_ai_evidence.contracts import make_source_record
+from kairos_ai_evidence.evidence_evaluator import (
     _ADJACENCY_WINDOW,
     _DATE_SPAN_RE,
     _DEFAULT_NOISE_RE,
@@ -919,7 +919,7 @@ class TestEvaluatorFailurePaths:
         ctx = _FakeCtx({"claim_records": [], "sources": [], "as_of": "2026-07-01", "query": "q"})
         with (
             patch(
-                "kairos_plugin_evidence.evidence_evaluator.derive_overall_verdict",
+                "kairos_ai_evidence.evidence_evaluator.derive_overall_verdict",
                 side_effect=RuntimeError("raw internal failure sk-abc123"),
             ),
             pytest.raises(ExecutionError) as exc_info,
@@ -941,7 +941,7 @@ class TestClassifyTier:
     """G2: classify_tier — TLD heuristic + policy overrides."""
 
     def _policy(self, **kwargs: Any) -> Any:
-        from kairos_plugin_evidence.evidence_evaluator import TrustPolicy
+        from kairos_ai_evidence.evidence_evaluator import TrustPolicy
 
         return TrustPolicy.from_config(kwargs if kwargs else None)
 
@@ -990,7 +990,7 @@ class TestClassifyTier:
     def test_missing_domain_returns_aggregator(self) -> None:
         """Source with empty/missing domain → heuristic → aggregator."""
         src = _make_src(domain="")
-        from kairos_plugin_evidence.evidence_evaluator import TrustPolicy
+        from kairos_ai_evidence.evidence_evaluator import TrustPolicy
 
         assert classify_tier(src, TrustPolicy()) == "aggregator"
 
@@ -1676,7 +1676,7 @@ class TestEvaluatorSecurity:
         ctx = _FakeCtx({"claim_records": [], "sources": [], "as_of": "2026-07-01", "query": "q"})
         with (
             patch(
-                "kairos_plugin_evidence.evidence_evaluator.derive_overall_verdict",
+                "kairos_ai_evidence.evidence_evaluator.derive_overall_verdict",
                 side_effect=RuntimeError("internal error with secret api_key=sk-xyz999"),
             ),
             pytest.raises(ExecutionError) as exc_info,
@@ -1797,7 +1797,7 @@ class TestEvaluatorSecurity:
 
     def test_no_llm_in_evaluator_module(self) -> None:
         """EE-3: no LLM adapter, no model_fn, no anthropic/openai import in this module."""
-        import kairos_plugin_evidence.evidence_evaluator as mod
+        import kairos_ai_evidence.evidence_evaluator as mod
 
         source_code = inspect.getsource(mod)
         for forbidden in ("ModelAdapter", "anthropic", "openai", "model_fn"):
@@ -1970,7 +1970,7 @@ class TestPacketSerialization:
         """MANIFEST.describe() lists all four steps (C4 adds belief_revision_builder).
         describe() returns {"steps": {step_name: {...}, ...}} — a dict keyed by name.
         """
-        from kairos_plugin_evidence import MANIFEST
+        from kairos_ai_evidence import MANIFEST
 
         described = MANIFEST.describe()
         # steps is a dict[str, dict], keyed by step name
@@ -1982,14 +1982,14 @@ class TestPacketSerialization:
 
     def test_manifest_step_count_is_four(self) -> None:
         """MANIFEST has 4 steps after C4 (belief_revision_builder) was added."""
-        from kairos_plugin_evidence import MANIFEST
+        from kairos_ai_evidence import MANIFEST
 
         described = MANIFEST.describe()
         assert len(described["steps"]) == 4
         assert "belief_revision_builder" in described["steps"]
 
     def test_manifest_evaluator_has_output_contract(self) -> None:
-        from kairos_plugin_evidence import MANIFEST
+        from kairos_ai_evidence import MANIFEST
 
         described = MANIFEST.describe()
         # steps is a dict keyed by step name
@@ -2003,7 +2003,7 @@ class TestPacketSerialization:
 
     def test_trust_policy_frozen_dataclass_json_serializable_fields(self) -> None:
         """TrustPolicy fields are JSON-native after conversion (frozenset → list)."""
-        from kairos_plugin_evidence.evidence_evaluator import TrustPolicy
+        from kairos_ai_evidence.evidence_evaluator import TrustPolicy
 
         policy = TrustPolicy.from_config(
             {"pin": ["a.com"], "deny": ["b.net"], "tier_overrides": {"c.org": "official"}}
@@ -2101,7 +2101,7 @@ class TestNgramWordCapBoundary:
 
     def test_anchor_within_word_cap_is_found(self) -> None:
         """A distinctive anchor at word 0 (within the 100-word cap) is extracted."""
-        from kairos_plugin_evidence.evidence_evaluator import _MAX_CLAIM_WORDS
+        from kairos_ai_evidence.evidence_evaluator import _MAX_CLAIM_WORDS
 
         claim_text = "zephyrunique " + ("filler " * _MAX_CLAIM_WORDS)
         claim = _claim(claim_text.strip(), "entity_fact")
@@ -2116,7 +2116,7 @@ class TestNgramWordCapBoundary:
         not rejected outright; but the capped n-gram search over words[:100] can
         no longer locate the cut token, so nothing is extracted → [].
         """
-        from kairos_plugin_evidence.evidence_evaluator import _MAX_CLAIM_WORDS
+        from kairos_ai_evidence.evidence_evaluator import _MAX_CLAIM_WORDS
 
         # 100 filler words occupy indices 0..99; "zephyrunique" is word index 100
         # (the 101st word) → excluded by words[:_MAX_CLAIM_WORDS].

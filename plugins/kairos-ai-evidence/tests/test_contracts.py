@@ -1,4 +1,4 @@
-"""Tests for kairos_plugin_evidence.contracts — C1 Evidence Engine contracts.
+"""Tests for kairos_ai_evidence.contracts — C1 Evidence Engine contracts.
 
 Test-after (Evidence Engine exception). Failure paths first, then boundaries,
 happy paths, security, and serialization — per CLAUDE.md test priority order.
@@ -14,7 +14,7 @@ import fnmatch
 import json
 from typing import Any
 
-from kairos_plugin_evidence.contracts import (
+from kairos_ai_evidence.contracts import (
     BUILDER_OUTPUT,
     CLAIM_RECORD,
     EVALUATOR_INPUT,
@@ -877,7 +877,7 @@ class TestSchemaConformance:
         """MANIFEST is a PluginManifest with name='evidence'; C2 adds content_gate step."""
         from kairos.plugins.registry import PluginManifest
 
-        from kairos_plugin_evidence import MANIFEST
+        from kairos_ai_evidence import MANIFEST
 
         assert isinstance(MANIFEST, PluginManifest)
         assert MANIFEST.name == "evidence"
@@ -889,7 +889,7 @@ class TestSchemaConformance:
 
     def test_manifest_describe_is_json_safe(self) -> None:
         """MANIFEST.describe() returns a JSON-serialisable dict."""
-        from kairos_plugin_evidence import MANIFEST
+        from kairos_ai_evidence import MANIFEST
 
         desc = MANIFEST.describe()
         serialised = json.dumps(desc)
@@ -1233,7 +1233,7 @@ class TestSerialization:
 
     def test_manifest_describe_round_trips_json(self) -> None:
         """MANIFEST.describe() is JSON-serialisable and survives round-trip."""
-        from kairos_plugin_evidence import MANIFEST
+        from kairos_ai_evidence import MANIFEST
 
         desc = MANIFEST.describe()
         assert desc == json.loads(json.dumps(desc))

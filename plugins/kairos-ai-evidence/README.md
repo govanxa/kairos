@@ -1,4 +1,4 @@
-# kairos-plugin-evidence
+# kairos-ai-evidence
 
 Evidence Engine plugin for the Kairos SDK. Provides contract-validated evidence evaluation
 with deterministic verdict and confidence derivation — no model-emitted scores.
@@ -7,13 +7,13 @@ with deterministic verdict and confidence derivation — no model-emitted scores
 
 ```bash
 pip install "kairos-ai>=0.5,<0.6"
-pip install kairos-plugin-evidence
+pip install kairos-ai-evidence
 ```
 
 ## Quick start
 
 ```python
-from kairos_plugin_evidence import (
+from kairos_ai_evidence import (
     EVIDENCE_PACKET,
     make_packet,
     make_source_record,
@@ -27,7 +27,7 @@ from kairos_plugin_evidence import (
 
 ## Packet version compatibility
 
-| `kairos-plugin-evidence` | `packet_version` | `kairos-ai` |
+| `kairos-ai-evidence` | `packet_version` | `kairos-ai` |
 |--------------------------|------------------|-------------|
 | 0.1.x                    | 1.0              | >=0.5,<0.6  |
 

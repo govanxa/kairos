@@ -21,7 +21,7 @@ from kairos.exceptions import ExecutionError
 from kairos.plugins.registry import step_plugin
 from kairos.security import sanitize_exception
 
-from kairos_plugin_evidence.contracts import BUILDER_OUTPUT
+from kairos_ai_evidence.contracts import BUILDER_OUTPUT
 
 if TYPE_CHECKING:
     from kairos.step import StepContext

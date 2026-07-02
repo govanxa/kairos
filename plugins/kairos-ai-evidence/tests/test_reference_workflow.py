@@ -1,4 +1,4 @@
-"""Tests for kairos_plugin_evidence.workflows (C4) and quickstart smoke.
+"""Tests for kairos_ai_evidence.workflows (C4) and quickstart smoke.
 
 Test-after per the Evidence Engine exception (CLAUDE.md). Quality bar unchanged:
 90%+ coverage, failure-paths-first, security checklist, serialization round-trips.
@@ -28,7 +28,7 @@ from examples._fixtures import (
     INJECTION_SENTINEL,
     ingest_mcp_documents,
 )
-from kairos_plugin_evidence.workflows import build_reference_workflow
+from kairos_ai_evidence.workflows import build_reference_workflow
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -709,13 +709,13 @@ class TestManifest:
 
     def test_manifest_has_four_steps(self) -> None:
         """MANIFEST.steps has exactly 4 registered step actions."""
-        from kairos_plugin_evidence import MANIFEST
+        from kairos_ai_evidence import MANIFEST
 
         assert len(MANIFEST.steps) == 4
 
     def test_manifest_step_names(self) -> None:
         """MANIFEST.steps dict contains the four canonical step names as keys."""
-        from kairos_plugin_evidence import MANIFEST
+        from kairos_ai_evidence import MANIFEST
 
         names = set(MANIFEST.steps.keys())
         assert names == {
@@ -727,13 +727,13 @@ class TestManifest:
 
     def test_manifest_belief_revision_in_steps(self) -> None:
         """belief_revision_builder is a key in MANIFEST.steps (added by C4)."""
-        from kairos_plugin_evidence import MANIFEST
+        from kairos_ai_evidence import MANIFEST
 
         assert "belief_revision_builder" in MANIFEST.steps
 
     def test_manifest_workflows_reference_key(self) -> None:
         """MANIFEST.workflows contains a 'reference' key pointing to a callable."""
-        from kairos_plugin_evidence import MANIFEST
+        from kairos_ai_evidence import MANIFEST
 
         assert "reference" in MANIFEST.workflows
         assert callable(MANIFEST.workflows["reference"])
@@ -742,7 +742,7 @@ class TestManifest:
         """MANIFEST.workflows['reference']() returns a Workflow with 4 steps."""
         from kairos import Workflow
 
-        from kairos_plugin_evidence import MANIFEST
+        from kairos_ai_evidence import MANIFEST
 
         factory = MANIFEST.workflows["reference"]
         wf = factory()
@@ -751,19 +751,19 @@ class TestManifest:
 
     def test_manifest_name(self) -> None:
         """MANIFEST.name == 'evidence'."""
-        from kairos_plugin_evidence import MANIFEST
+        from kairos_ai_evidence import MANIFEST
 
         assert MANIFEST.name == "evidence"
 
     def test_manifest_version(self) -> None:
         """MANIFEST.version == '0.1.0'."""
-        from kairos_plugin_evidence import MANIFEST
+        from kairos_ai_evidence import MANIFEST
 
         assert MANIFEST.version == "0.1.0"
 
     def test_manifest_validators_empty(self) -> None:
         """MANIFEST.validators is an empty dict/sequence (no plugin-level validators in v0.1)."""
-        from kairos_plugin_evidence import MANIFEST
+        from kairos_ai_evidence import MANIFEST
 
         assert len(MANIFEST.validators) == 0
 
@@ -774,7 +774,7 @@ class TestManifest:
 
 
 def _is_proper_install() -> bool:
-    """Return True if kairos-plugin-evidence is installed as a proper wheel (not editable).
+    """Return True if kairos-ai-evidence is installed as a proper wheel (not editable).
 
     Under PEP 660 editable installs, importlib.metadata dist.files only contains
     the .pth + .dist-info entries, not the source .py files. load_plugin's RECORD
@@ -784,7 +784,7 @@ def _is_proper_install() -> bool:
         from importlib.metadata import files, packages_distributions
 
         dists = packages_distributions()
-        pkg_dists = dists.get("kairos_plugin_evidence", [])
+        pkg_dists = dists.get("kairos_ai_evidence", [])
         if not pkg_dists:
             return False
         dist_name = pkg_dists[0]
@@ -865,10 +865,10 @@ class TestQuickstartSmoke:
         ),
     )
     def test_load_plugin_succeeds_in_proper_install(self) -> None:
-        """load_plugin('kairos-plugin-evidence') returns a manifest with 4 steps."""
+        """load_plugin('kairos-ai-evidence') returns a manifest with 4 steps."""
         from kairos.plugins.registry import load_plugin
 
-        manifest = load_plugin("kairos-plugin-evidence")
+        manifest = load_plugin("kairos-ai-evidence")
         assert manifest.name == "evidence"
         assert len(manifest.steps) == 4
         assert "reference" in manifest.workflows

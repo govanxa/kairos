@@ -1,6 +1,6 @@
-"""Offline quickstart for kairos-plugin-evidence — port of the A1 acceptance demo.
+"""Offline quickstart for kairos-ai-evidence — port of the A1 acceptance demo.
 
-Loads the plugin via ``load_plugin("kairos-plugin-evidence")`` (with a documented
+Loads the plugin via ``load_plugin("kairos-ai-evidence")`` (with a documented
 fallback to direct import for editable/dev environments where the RECORD limitation
 of B2 applies), runs the reference workflow over five canned MCP-shaped fixture
 families, and prints the G1–G4 acceptance gates.
@@ -9,7 +9,7 @@ families, and prints the G1–G4 acceptance gates.
 (Case 3 addendum: the authoritative per-query date must come from the system clock,
 re-stamped every run).
 
-Usage (from the plugin root, ``plugins/kairos-plugin-evidence/``)::
+Usage (from the plugin root, ``plugins/kairos-ai-evidence/``)::
 
     python examples/quickstart.py
     # or, equivalently:
@@ -33,10 +33,18 @@ from typing import Any
 
 # Ensure the plugin root is importable so the documented ``python examples/quickstart.py``
 # invocation works from a bare checkout (not just ``python -m examples.quickstart`` or a
-# wheel install). The plugin root holds both ``kairos_plugin_evidence`` and ``examples``.
+# wheel install). The plugin root holds both ``kairos_ai_evidence`` and ``examples``.
+#
+# Force it to the FRONT of sys.path. An editable install of the parent Kairos repo puts
+# the repo root on sys.path (via its ``.pth``), and that root has its own ``examples``
+# package — a name collision. The plugin's own editable install also adds the plugin root,
+# but late; a plain "if not in sys.path" guard would then leave the repo root's ``examples``
+# ahead of ours. Removing any existing entry and re-inserting at position 0 guarantees the
+# plugin's ``examples`` package wins regardless of install state.
 _PLUGIN_ROOT = str(Path(__file__).resolve().parent.parent)
-if _PLUGIN_ROOT not in sys.path:
-    sys.path.insert(0, _PLUGIN_ROOT)
+while _PLUGIN_ROOT in sys.path:
+    sys.path.remove(_PLUGIN_ROOT)
+sys.path.insert(0, _PLUGIN_ROOT)
 
 # ---------------------------------------------------------------------------
 # Import the reference workflow — try load_plugin first, fall back to direct.
@@ -53,7 +61,7 @@ _LOAD_PLUGIN_PATH: str = "direct_import"
 try:
     from kairos.plugins.registry import load_plugin as _load_plugin
 
-    _manifest = _load_plugin("kairos-plugin-evidence")
+    _manifest = _load_plugin("kairos-ai-evidence")
     _build_reference_workflow = _manifest.workflows["reference"]
     _LOAD_PLUGIN_PATH = "load_plugin"
 except Exception as _lp_exc:  # noqa: BLE001
@@ -61,7 +69,7 @@ except Exception as _lp_exc:  # noqa: BLE001
         f"[quickstart] load_plugin unavailable ({type(_lp_exc).__name__}); "
         "falling back to direct import (editable-install RECORD limitation — see B2 docs)."
     )
-    from kairos_plugin_evidence.workflows import (
+    from kairos_ai_evidence.workflows import (
         build_reference_workflow as _build_reference_workflow,
     )  # type: ignore[assignment]
     # reason: load_plugin returns PluginManifest which carries a Callable[[], Workflow]
@@ -431,7 +439,7 @@ def _hr(char: str = "-", width: int = 72) -> str:
 def main() -> None:
     """Run the quickstart demo and print all gates.  Exits non-zero on failure."""
     print(_hr("="))  # noqa: T201
-    print("kairos-plugin-evidence — Offline Quickstart")  # noqa: T201
+    print("kairos-ai-evidence — Offline Quickstart")  # noqa: T201
     print("Running acceptance gates (scripted model, fully offline)...")  # noqa: T201
     print(_hr("="))  # noqa: T201
     print()  # noqa: T201
