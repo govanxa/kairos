@@ -63,10 +63,17 @@ from kairos.schema import ContractPair, FieldValidationError, Schema, Validation
 # Security utilities
 from kairos.security import (
     DEFAULT_SENSITIVE_PATTERNS,
+    FLAG_IMPERATIVE,
+    FLAG_ROLE_MARKER,
+    FLAG_TEMPLATE_TOKEN,
+    FLAG_TOOL_CALL,
+    INJECTION_FLAGS,
+    SanitizedText,
     redact_sensitive,
     sanitize_exception,
     sanitize_path,
     sanitize_retry_context,
+    sanitize_untrusted_text,
 )
 
 # State management
@@ -120,10 +127,17 @@ __all__ = [
     "ValidationResult",
     # Security utilities
     "DEFAULT_SENSITIVE_PATTERNS",
+    "FLAG_IMPERATIVE",
+    "FLAG_ROLE_MARKER",
+    "FLAG_TEMPLATE_TOKEN",
+    "FLAG_TOOL_CALL",
+    "INJECTION_FLAGS",
+    "SanitizedText",
     "redact_sensitive",
     "sanitize_exception",
     "sanitize_path",
     "sanitize_retry_context",
+    "sanitize_untrusted_text",
     # State management
     "ScopedStateProxy",
     "StateSnapshot",

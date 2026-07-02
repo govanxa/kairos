@@ -12,6 +12,8 @@ from __future__ import annotations
 import fnmatch
 import os
 import re
+import unicodedata
+from dataclasses import dataclass
 from typing import cast
 
 from kairos.exceptions import ConfigError, SecurityError
@@ -379,3 +381,277 @@ def sanitize_path(name: str, base_dir: str | None = None) -> str:
         )
 
     return full_path
+
+
+# ---------------------------------------------------------------------------
+# Untrusted-text gate primitives (B1)
+# Promoted from examples/evidence_engine/untrusted_text.py.
+# Reference: docs/projects/evidence-engine/blueprints/blueprint-b1-untrusted-text.md
+# ---------------------------------------------------------------------------
+
+# Canonical injection-flag vocabulary.  Values emitted into SanitizedText.flags;
+# NEVER contain raw matched text (03 §2 injection_flags rule).
+FLAG_ROLE_MARKER: str = "role_marker"
+FLAG_TEMPLATE_TOKEN: str = "template_token"  # noqa: S105
+FLAG_IMPERATIVE: str = "imperative_override"
+FLAG_TOOL_CALL: str = "tool_call_syntax"
+
+INJECTION_FLAGS: frozenset[str] = frozenset(
+    {FLAG_ROLE_MARKER, FLAG_TEMPLATE_TOKEN, FLAG_IMPERATIVE, FLAG_TOOL_CALL}
+)
+
+# Replacement token — visible, inert, never a valid instruction keyword.
+_NEUTRALIZED = "[NEUTRALIZED]"
+
+# ---------------------------------------------------------------------------
+# Pre-compiled patterns (module-level — T9, never re-compiled per call)
+# ---------------------------------------------------------------------------
+
+# Zero-width and invisible Unicode characters — explicit codepoints so the
+# class is reviewable by eye: ZWSP, ZWNJ, ZWJ, word joiner, BOM/ZWNBSP, soft hyphen.
+_ZERO_WIDTH_CODEPOINTS: tuple[int, ...] = (0x200B, 0x200C, 0x200D, 0x2060, 0xFEFF, 0x00AD)
+_ZERO_WIDTH_RE: re.Pattern[str] = re.compile("[" + "".join(map(chr, _ZERO_WIDTH_CODEPOINTS)) + "]")
+
+# Role markers: "system:", "assistant:", "user:", "human:", "ai:" at line start
+# or as bracketed tags; case-insensitive.
+_ROLE_MARKER_RES: list[re.Pattern[str]] = [
+    re.compile(r"^\s*(system|assistant|user|human|ai)\s*:", re.IGNORECASE | re.MULTILINE),
+    re.compile(r"\[(system|assistant|user|human|ai)\]", re.IGNORECASE),
+]
+
+# Chat template tokens — bounded quantifiers (T9 — prevents catastrophic backtracking).
+_TEMPLATE_TOKEN_RES: list[re.Pattern[str]] = [
+    re.compile(r"<\|im_start\|>|<\|im_end\|>", re.IGNORECASE),
+    re.compile(r"<\|[^|\n]{0,30}\|>"),  # bounded: max 30 chars between pipes
+    re.compile(r"\[INST\]|\[/INST\]|<<SYS>>|<</SYS>>", re.IGNORECASE),
+    re.compile(r"<s>|</s>", re.IGNORECASE),  # LLaMA sentence boundaries
+]
+
+# Imperative injection phrases — common prompt injection patterns.
+# Use non-greedy, bounded quantifiers throughout (T9).
+_IMPERATIVE_RES: list[re.Pattern[str]] = [
+    re.compile(r"ignore\s+(?:all\s+)?(?:previous|prior)\s+instructions?", re.IGNORECASE),
+    re.compile(r"disregard\s+(?:your|the|all|any)\s+\S{0,30}", re.IGNORECASE),
+    re.compile(r"you\s+are\s+now\s+(?:a\s+)?(?:different|new|another)\b", re.IGNORECASE),
+    re.compile(r"forget\s+(?:everything|what)\s+you\s+(?:were|have)", re.IGNORECASE),
+    re.compile(r"your\s+new\s+(?:instructions?|role|persona|task)", re.IGNORECASE),
+    re.compile(r"act\s+as\s+(?:if|an?\s+\S{1,30}|though)", re.IGNORECASE),
+    re.compile(
+        r"(?:reveal|print|show|output)\s+(?:your|the)\s+(?:system|instructions?|prompt)",
+        re.IGNORECASE,
+    ),
+    re.compile(r"(?:pretend|imagine)\s+you\s+(?:are|were|have)", re.IGNORECASE),
+    re.compile(r"jailbreak|DAN\s+mode|developer\s+mode", re.IGNORECASE),
+]
+
+# Tool-call syntax shapes — JSON function-call patterns (bounded).
+_TOOL_CALL_RES: list[re.Pattern[str]] = [
+    re.compile(r'"function"\s*:\s*\{[^}]{0,200}\}', re.IGNORECASE),
+    re.compile(r'"name"\s*:\s*"[^"]{0,60}"\s*,\s*"arguments"\s*:', re.IGNORECASE),
+    re.compile(r"<tool_call>|</tool_call>|<tool_result>|</tool_result>", re.IGNORECASE),
+    re.compile(r"\btools?\b\s*:\s*\[", re.IGNORECASE),
+]
+
+# Instruction-critical homoglyph map: Cyrillic/Greek lookalikes → ASCII.
+# Applied AFTER NFKC (which handles many standard compatibility mappings) to
+# catch residual confusables used to obfuscate keywords.
+_HOMOGLYPH_MAP: dict[str, str] = {
+    # Cyrillic lowercase
+    "а": "a",
+    "е": "e",
+    "о": "o",
+    "р": "r",
+    "с": "s",
+    "у": "u",
+    "х": "x",
+    "і": "i",  # Ukrainian/Belarusian dotted i
+    # Cyrillic capitals
+    "А": "A",
+    "Е": "E",
+    "О": "O",
+    "Р": "R",
+    "С": "S",
+    "Т": "T",
+    "Х": "X",
+    # Greek lowercase
+    "α": "a",
+    "ε": "e",
+    "ο": "o",  # omicron
+    "ν": "v",  # nu — resembles v
+    "τ": "t",  # tau
+    "υ": "u",  # upsilon
+    # Greek capitals
+    "Α": "A",
+    "Ε": "E",
+    "Ο": "O",
+}
+
+# Translation table for fast str.translate().
+_HOMOGLYPH_TABLE: dict[int, str] = {ord(k): v for k, v in _HOMOGLYPH_MAP.items()}
+
+# Minimum non-neutralized content (chars) to consider a document salvageable.
+_MIN_SALVAGEABLE_CHARS = 30
+# Neutralization-count threshold for predominantly-instructional rejection.
+_PREDOMINANTLY_INSTRUCTIONAL_THRESHOLD = 3
+
+
+# ---------------------------------------------------------------------------
+# SanitizedText — immutable output of sanitize_untrusted_text
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class SanitizedText:
+    """Immutable result of sanitizing an untrusted string.
+
+    Attributes:
+        text: Cleaned, neutralized, credential-scrubbed text. Safe to store
+            in state (never raw web content).
+        flags: Sorted, de-duped canonical flag names that fired during
+            sanitization. Values are always a subset of ``INJECTION_FLAGS``;
+            raw matched text is NEVER placed here.
+        truncated: ``True`` if the text was capped to ``max_len``.
+    """
+
+    text: str
+    flags: list[str]
+    truncated: bool
+
+
+# ---------------------------------------------------------------------------
+# Untrusted-text public API
+# ---------------------------------------------------------------------------
+
+
+def normalize(text: str) -> str:
+    """NFKC-normalize, strip zero-width chars, and homoglyph-fold an untrusted string.
+
+    Deterministic. Applied before pattern matching so obfuscated markers are
+    caught by the ``neutralize`` step.
+
+    Args:
+        text: Raw untrusted string.
+
+    Returns:
+        Normalized string safe to apply regex patterns to.
+    """
+    text = unicodedata.normalize("NFKC", text)
+    text = _ZERO_WIDTH_RE.sub("", text)
+    text = text.translate(_HOMOGLYPH_TABLE)
+    return text
+
+
+def neutralize(text: str) -> tuple[str, list[str]]:
+    """Defang role markers, template tokens, imperatives, and tool-call syntax.
+
+    Applies all pattern groups in order. Matched regions are replaced with
+    ``[NEUTRALIZED]``. Returns the defanged text and the set of canonical flag
+    names that fired. Raw matched fragments are NEVER placed in the flags list.
+
+    Args:
+        text: Pre-normalized untrusted text.
+
+    Returns:
+        A 2-tuple ``(defanged_text, sorted_unique_flag_names)``.
+    """
+    flags: set[str] = set()
+
+    for pat in _ROLE_MARKER_RES:
+        new_text = pat.sub(_NEUTRALIZED, text)
+        if new_text != text:
+            flags.add(FLAG_ROLE_MARKER)
+            text = new_text
+
+    for pat in _TEMPLATE_TOKEN_RES:
+        new_text = pat.sub(_NEUTRALIZED, text)
+        if new_text != text:
+            flags.add(FLAG_TEMPLATE_TOKEN)
+            text = new_text
+
+    for pat in _IMPERATIVE_RES:
+        new_text = pat.sub(_NEUTRALIZED, text)
+        if new_text != text:
+            flags.add(FLAG_IMPERATIVE)
+            text = new_text
+
+    for pat in _TOOL_CALL_RES:
+        new_text = pat.sub(_NEUTRALIZED, text)
+        if new_text != text:
+            flags.add(FLAG_TOOL_CALL)
+            text = new_text
+
+    return text, sorted(flags)
+
+
+def scrub_credentials(text: str) -> str:
+    """Redact credential patterns from free text (T7).
+
+    Thin public wrapper over the shared ``_redact_credentials`` helper so that
+    ``_CREDENTIAL_PATTERNS`` is the single canonical set used by both
+    ``sanitize_exception`` (exception messages) and this function (scraped
+    free text).  Applied after neutralization so credentials embedded inside
+    injection phrases are still caught.
+
+    Args:
+        text: Text that may contain API keys, tokens, or passwords.
+
+    Returns:
+        Text with credential values replaced by ``[REDACTED_KEY]`` or similar.
+    """
+    return _redact_credentials(text)
+
+
+def sanitize_untrusted_text(text: str, *, max_len: int = 2000) -> SanitizedText:
+    """Full sanitization pipeline for a single untrusted string field.
+
+    Pipeline: ``normalize`` → ``neutralize`` → ``scrub_credentials`` → cap to
+    ``max_len``.  The single entry point that ``content_gate`` calls per string
+    field.
+
+    Args:
+        text: Raw untrusted string (from web page content, title, URL path, etc.).
+        max_len: Maximum output length in characters. Default 2000.
+
+    Returns:
+        ``SanitizedText`` with cleaned text, triggered flags, and truncation flag.
+    """
+    if not text:
+        return SanitizedText(text="", flags=[], truncated=False)
+
+    normed = normalize(text)
+    neutralized, flags = neutralize(normed)
+    scrubbed = scrub_credentials(neutralized)
+
+    truncated = len(scrubbed) > max_len
+    final_text = scrubbed[:max_len] if truncated else scrubbed
+
+    return SanitizedText(text=final_text, flags=flags, truncated=truncated)
+
+
+def is_predominantly_instructional(sanitized: SanitizedText, *, raw_len: int) -> bool:
+    """Structural rejection signal: is the content mostly injection payloads?
+
+    Returns ``True`` when the document should be rejected as unsalvageable:
+
+    - Empty (or whitespace-only) after cleaning.
+    - So small after neutralization relative to original that real content is gone.
+    - Contains enough neutralization markers to indicate the page is primarily
+      an injection payload.
+
+    Args:
+        sanitized: Output of ``sanitize_untrusted_text``.
+        raw_len: Character length of the original (pre-sanitization) text.
+
+    Returns:
+        ``True`` if the document is predominantly instructional.
+    """
+    stripped = sanitized.text.strip()
+
+    if not stripped:
+        return True
+
+    neutralized_count = sanitized.text.count(_NEUTRALIZED)
+    if neutralized_count >= _PREDOMINANTLY_INSTRUCTIONAL_THRESHOLD:
+        return True
+
+    return raw_len > 0 and len(stripped) < _MIN_SALVAGEABLE_CHARS
