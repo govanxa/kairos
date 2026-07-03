@@ -422,6 +422,8 @@ working_context = result.final_state["working_context_bundle"]["working_context"
 # prepend working_context to your model prompt and ask your question
 ```
 
+### MCP server
+
 The plugin also ships as an MCP server, so a calling model must pass retrieved content
 through the trust boundary before it can answer:
 
@@ -443,7 +445,7 @@ in the [Getting Started guide](GETTING_STARTED.md#14-evidence-engine-plugin) and
 
 ## Status
 
-**MVP COMPLETE, plus Adapters, Observability, and a Plugin System.** All modules are built with strict TDD (tests before code) and a full agent pipeline (architect, developer, code review, security audit, QA) for every module. Published to [PyPI](https://pypi.org/project/kairos-ai/) as `kairos-ai` — current version **0.5.0**, which adds the plugin runtime and the first Evidence Engine plugin, [`kairos-ai-evidence`](https://pypi.org/project/kairos-ai-evidence/) **0.1.0** (`pip install kairos-ai-evidence`).
+**MVP COMPLETE, plus Adapters, Observability, and a Plugin System.** All modules are built with strict TDD (tests before code) and a full agent pipeline (architect, developer, code review, security audit, QA) for every module. Published to [PyPI](https://pypi.org/project/kairos-ai/) as `kairos-ai` — current version **0.5.0**, which adds the plugin runtime. The first plugin, the Evidence Engine [`kairos-ai-evidence`](https://pypi.org/project/kairos-ai-evidence/), is at **0.2.0** (`pip install kairos-ai-evidence`), which adds an MCP server exposing the evidence pipeline as callable tools.
 
 **MVP — 12 of 12 modules complete**
 
@@ -478,7 +480,7 @@ in the [Getting Started guide](GETTING_STARTED.md#14-evidence-engine-plugin) and
 
 | Package | Status |
 |---|---|
-| [`kairos-ai-evidence`](https://pypi.org/project/kairos-ai-evidence/) (Evidence Engine — contract-validated evidence evaluation) | Published — v0.1.0 (v0.2.0 pending release) |
+| [`kairos-ai-evidence`](https://pypi.org/project/kairos-ai-evidence/) (Evidence Engine — contract-validated evidence evaluation + MCP server) | Published — v0.2.0 |
 
 **1,934 tests passing** in the core SDK (99% coverage), plus **782 tests** in the `kairos-ai-evidence` plugin (99% coverage). Every module cleared the full agent pipeline — code review, security audit, and QA.
 
