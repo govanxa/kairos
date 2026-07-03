@@ -6,9 +6,11 @@ with deterministic verdict and confidence derivation — no model-emitted scores
 ## Installation
 
 ```bash
-pip install "kairos-ai>=0.5,<0.6"
 pip install kairos-ai-evidence
 ```
+
+This pulls in the core SDK automatically — the plugin declares `kairos-ai>=0.5,<0.6` as a
+dependency.
 
 ## Quick start
 
