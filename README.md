@@ -422,6 +422,19 @@ working_context = result.final_state["working_context_bundle"]["working_context"
 # prepend working_context to your model prompt and ask your question
 ```
 
+The plugin also ships as an MCP server, so a calling model must pass retrieved content
+through the trust boundary before it can answer:
+
+```bash
+pip install "kairos-ai-evidence[mcp]"
+kairos-evidence-mcp
+```
+
+It exposes two tools: `evaluate_evidence` (retrieval-agnostic — you supply the documents)
+and `verified_answer` (retrieval + gate + evaluate in one call, requires a configured
+retriever). See the [plugin README's MCP section](plugins/kairos-ai-evidence/README.md#mcp-server)
+for retriever configuration and security notes.
+
 Full walkthrough — install, LM Studio / Ollama / llama.cpp setup, MCP and no-MCP routes —
 in the [Getting Started guide](GETTING_STARTED.md#14-evidence-engine-plugin) and the
 [plugin README](plugins/kairos-ai-evidence/README.md).
@@ -465,9 +478,9 @@ in the [Getting Started guide](GETTING_STARTED.md#14-evidence-engine-plugin) and
 
 | Package | Status |
 |---|---|
-| [`kairos-ai-evidence`](https://pypi.org/project/kairos-ai-evidence/) (Evidence Engine — contract-validated evidence evaluation) | Published — v0.1.0 |
+| [`kairos-ai-evidence`](https://pypi.org/project/kairos-ai-evidence/) (Evidence Engine — contract-validated evidence evaluation) | Published — v0.1.0 (v0.2.0 pending release) |
 
-**1,934 tests passing** in the core SDK (99% coverage), plus **588 tests** in the `kairos-ai-evidence` plugin (99% coverage). Every module cleared the full agent pipeline — code review, security audit, and QA.
+**1,934 tests passing** in the core SDK (99% coverage), plus **782 tests** in the `kairos-ai-evidence` plugin (99% coverage). Every module cleared the full agent pipeline — code review, security audit, and QA.
 
 ---
 

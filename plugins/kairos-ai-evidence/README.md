@@ -109,7 +109,7 @@ following the pattern shown there.
 
 | `kairos-ai-evidence` | `packet_version` | `kairos-ai` |
 |--------------------------|------------------|-------------|
-| 0.1.x                    | 1.0              | >=0.5,<0.6  |
+| 0.2.x                    | 1.0              | >=0.5,<0.6  |
 
 ## License
 
