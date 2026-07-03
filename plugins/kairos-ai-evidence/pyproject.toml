@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "kairos-ai-evidence"
-version = "0.1.0"
+version = "0.2.0"
 description = "Evidence Engine plugin for the Kairos SDK — contract-validated evidence evaluation"
 readme = "README.md"
 license = "Apache-2.0"
@@ -14,8 +14,17 @@ authors = [
 ]
 dependencies = ["kairos-ai>=0.5,<0.6"]
 
+[project.optional-dependencies]
+# The MCP server (D3) is an optional extra — core kairos-ai-evidence stays
+# dependency-free. `mcp` (FastMCP) requires Python >=3.10; this plugin
+# requires >=3.11, so the floor is compatible.
+mcp = ["mcp>=1.28,<2"]
+
 [project.entry-points."kairos.plugins"]
 evidence = "kairos_ai_evidence:MANIFEST"
+
+[project.scripts]
+kairos-evidence-mcp = "kairos_ai_evidence.mcp.server:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["kairos_ai_evidence"]
@@ -58,6 +67,26 @@ ignore = [
 [tool.ruff.lint.per-file-ignores]
 "tests/**/*.py" = ["S101", "S105", "S106", "T20", "S310", "SIM108"]
 "examples/**/*.py" = ["T20", "S101"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+check_untyped_defs = true
+no_implicit_optional = true
+
+# The `mcp` SDK is an optional extra (may ship without a py.typed marker /
+# type stubs in some environments) and its `@app.tool()` decorator is
+# untyped from mypy's perspective. server.py is the ONLY module in this
+# package that imports `mcp` — everything else (limits/retriever/tools) is
+# stdlib + kairos only and needs no override.
+[[tool.mypy.overrides]]
+module = "kairos_ai_evidence.mcp.server"
+ignore_missing_imports = true
+disallow_untyped_decorators = false
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

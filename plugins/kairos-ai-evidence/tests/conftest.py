@@ -601,6 +601,149 @@ def case2_raw_docs() -> list[dict[str, Any]]:
 
 
 # ---------------------------------------------------------------------------
+# C3 — Case 4 verbatim regression fixtures (real-world-cases.md §4)
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def case4_raw_docs() -> list[dict[str, Any]]:
+    """Case 4 verbatim — "Who won the 2026 World Cup?", 5 MCP results
+    (real-world-cases.md §4). Built through the real C2 gate_documents so
+    sanitization is exercised end-to-end.
+
+    The tournament is mid-Round-of-32/16 at query time — no source names a
+    winner because none exists yet. Excerpts deliberately carry stray
+    entity-adjacent numerics (an attendance figure, standings/live-score
+    digits) so the fixture faithfully proves the claim-side gate PREVENTS
+    those numerics from being extracted as a spurious "answer".
+
+    Expected outcome after the Case 4 fix:
+    - claim "Who won the the 2026 World Cup?" (verbatim typo) is classified
+      ``numeric`` (only digit is the bare year "2026") and gated unanchored.
+    - extracted_values == [] for every source; no conflict is manufactured
+      from the differing stray numerics (3,605,357 / 202 / 3).
+    - overall_verdict == "insufficient" (not "conflicting").
+    """
+    return [
+        {
+            "url": "https://en.wikipedia.org/wiki/2026_FIFA_World_Cup",
+            "title": "2026 FIFA World Cup",
+            "content": (
+                "The 2026 FIFA World Cup is the ongoing 23rd edition of the tournament. "
+                "Total attendance across the opening matches reached 3,605,357 fans, a "
+                "record for the expanded 48-team format."
+            ),
+            "fetched_at": "2026-07-02T20:00:00Z",
+        },
+        {
+            "url": "https://www.fifa.com/en/tournaments/mens/worldcup/canadamexicousa2026/standings",
+            "title": "2026 FIFA World Cup — Standings",
+            "content": (
+                "Group standings are updated after every match day. Matchday 202 fixtures "
+                "concluded with several group leaders confirmed heading into the knockout "
+                "rounds."
+            ),
+            "fetched_at": "2026-07-02T20:00:00Z",
+        },
+        {
+            "url": "https://www.foxsports.com/soccer/2026-fifa-world-cup-history",
+            "title": "2026 FIFA World Cup: Tournament History and Format",
+            "content": (
+                "This edition expanded to 48 teams for the first time. Fixture 202 marked "
+                "the start of the knockout stage across the host nations."
+            ),
+            "fetched_at": "2026-07-02T20:00:00Z",
+        },
+        {
+            "url": "https://www.britannica.com/event/2026-FIFA-World-Cup",
+            "title": "2026 FIFA World Cup | Encyclopedia Britannica",
+            "content": (
+                "The 2026 FIFA World Cup is being co-hosted by Canada, Mexico, and the "
+                "United States, the first World Cup hosted by three nations."
+            ),
+            "fetched_at": "2026-07-02T20:00:00Z",
+        },
+        {
+            "url": "https://www.espn.com/soccer/scoreboard/_/league/fifa.world",
+            "title": "2026 FIFA World Cup Scoreboard",
+            "content": (
+                "Live scoreboard for the 2026 FIFA World Cup. Round of 32 matches are "
+                "underway; 3 fixtures remain to be played today across the host cities."
+            ),
+            "fetched_at": "2026-07-02T20:00:00Z",
+        },
+    ]
+
+
+@pytest.fixture
+def case4_champions_league_raw_docs() -> list[dict[str, Any]]:
+    """Case 4 string-side companion — "current UEFA Champions League holder"
+    (real-world-cases.md §4, same-family observation).
+
+    Winners-list pages with near-identical page-title fragments ("UEFA
+    Champions League" vs "Champions League") that previously produced a
+    spurious `conflicting` verdict via string n-gram matching. The claim-side
+    gate must classify this bare noun-phrase claim as unanchored (`other`,
+    not declarative) so it never enters string matching at all.
+    """
+    return [
+        {
+            "url": "https://en.wikipedia.org/wiki/List_of_European_Cup_and_UEFA_Champions_League_finals",
+            "title": "List of UEFA Champions League Finals",
+            "content": (
+                "The UEFA Champions League is Europe's premier club football competition, "
+                "played annually since 1955 in its earlier European Cup format."
+            ),
+            "fetched_at": "2026-07-02T20:00:00Z",
+        },
+        {
+            "url": "https://www.uefa.com/uefachampionsleague/history/winners/",
+            "title": "Champions League Winners by Season | UEFA",
+            "content": (
+                "Browse the full history of Champions League winners season by season, "
+                "including finals venues and top scorers."
+            ),
+            "fetched_at": "2026-07-02T20:00:00Z",
+        },
+    ]
+
+
+@pytest.fixture
+def usa_bosnia_raw_docs() -> list[dict[str, Any]]:
+    """Regression fixture — "What was the score of USA vs Bosnia?" (same session
+    as real-world-cases.md §4). Four independent domains agreeing on "2-0" so the
+    score-cue reclassification path (question-form claim -> event_outcome) must
+    stay `verified`, never regressed by the Case 4 claim-side gate.
+    """
+    return [
+        {
+            "url": "https://www.espn.com/soccer/match/usa-bosnia-final",
+            "title": "USA 2-0 Bosnia: World Cup Final Score",
+            "content": "USA beat Bosnia 2-0 in the World Cup group-stage match.",
+            "fetched_at": "2026-07-02T20:00:00Z",
+        },
+        {
+            "url": "https://www.bbc.com/sport/football/usa-2-0-bosnia",
+            "title": "USA 2-0 Bosnia Highlights",
+            "content": "USA secured a 2-0 win over Bosnia at the World Cup.",
+            "fetched_at": "2026-07-02T20:00:00Z",
+        },
+        {
+            "url": "https://www.foxsports.com/soccer/usa-bosnia-recap",
+            "title": "USA 2-0 Bosnia: Match Recap",
+            "content": "USA vs Bosnia ended 2-0 in front of a sold-out crowd.",
+            "fetched_at": "2026-07-02T20:00:00Z",
+        },
+        {
+            "url": "https://www.aljazeera.com/sports/2026/7/2/usa-bosnia-result",
+            "title": "USA 2-0 Bosnia: World Cup Result",
+            "content": "USA defeated Bosnia 2-0 in the World Cup knockout stage.",
+            "fetched_at": "2026-07-02T20:00:00Z",
+        },
+    ]
+
+
+# ---------------------------------------------------------------------------
 # C3 — Trust policy fixtures
 # ---------------------------------------------------------------------------
 

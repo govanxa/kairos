@@ -45,6 +45,14 @@ _DATE_TOKENS_RE: re.Pattern[str] = re.compile(
 # Any digit — final heuristic step after score and date checks.
 _NUMBER_RE: re.Pattern[str] = re.compile(r"\d")
 
+# Score-cue word ("score"/"scoreline"/"scoreboard"/"scores") — Case 4.
+# Bounded alternation, pre-compiled at import (T9: no ReDoS risk).
+_SCORE_CUE_RE: re.Pattern[str] = re.compile(r"\bscore(?:line|board|s)?\b", re.IGNORECASE)
+
+# Matchup token ("vs"/"vs."/"versus"/"against") — Case 4.
+# Bounded alternation, pre-compiled at import (T9: no ReDoS risk).
+_MATCHUP_RE: re.Pattern[str] = re.compile(r"\b(?:vs\.?|versus|against)\b", re.IGNORECASE)
+
 
 # ---------------------------------------------------------------------------
 # Heuristic claim-kind classifier (pure)
@@ -57,6 +65,13 @@ def _infer_claim_kind(claim_text: str) -> str:
     Order (MUST-fix #3 vs the A1 spike — score checked FIRST):
 
     1. Score pattern present (e.g. "3-2", "10–0") → ``event_outcome``
+    1b. Score-cue word ("score") AND matchup token ("vs") → ``event_outcome``
+        (Case 4). A question like "What was the score of X vs Y?" carries a
+        typed SCORE target even though the claim text holds no score itself;
+        classifying it ``event_outcome`` routes ``extract_values`` to
+        ``_SCORE_RE`` against the sources. Requiring BOTH cue and matchup
+        avoids reclassifying non-sport uses ("credit score reached 720"
+        stays ``numeric``).
     2. Date token present (month name / ISO date / quarter) → ``temporal``
     3. Any digit present → ``numeric``
     4. Otherwise → ``other``
@@ -68,6 +83,8 @@ def _infer_claim_kind(claim_text: str) -> str:
         One of ``"event_outcome"``, ``"temporal"``, ``"numeric"``, ``"other"``.
     """
     if _SCORE_RE.search(claim_text):
+        return "event_outcome"
+    if _SCORE_CUE_RE.search(claim_text) and _MATCHUP_RE.search(claim_text):
         return "event_outcome"
     if _DATE_TOKENS_RE.search(claim_text):
         return "temporal"

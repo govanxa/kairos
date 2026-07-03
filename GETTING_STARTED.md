@@ -1310,6 +1310,64 @@ For the complete testing walkthrough — LM Studio / Ollama / llama.cpp server s
 scoped-state hardened variant, and both the MCP and no-MCP retrieval routes — see the
 Evidence Engine testing guide that ships with the plugin.
 
+### Evidence Engine as an MCP server
+
+Everything above works with documents you fetch yourself. If you'd rather have the
+firewall sit **in front of** retrieval — so a calling model must pass through the trust
+boundary before it can answer at all — run the plugin as an MCP server.
+
+Install the `mcp` extra and start the server (stdio transport):
+
+```bash
+pip install "kairos-ai-evidence[mcp]"
+kairos-evidence-mcp
+```
+
+The server exposes two tools, both returning the same deterministic evidence bundle
+(`working_context`, `citations`, `overall_verdict`, `confidence`, source counts):
+
+- **`evaluate_evidence(documents, claims, query, as_of=None)`** — retrieval-agnostic.
+  Works out of the box with no retriever configured; you supply the documents and they
+  are sanitized by the content gate before evaluation.
+- **`verified_answer(query, claims=None, max_results=None)`** — the stronger firewall.
+  Retrieval happens **server-side, behind the gate**, so the calling model cannot
+  substitute its own (possibly stale or hostile) documents — it must consume the gated
+  response. Requires a configured retriever (see below); without one it returns a
+  structured `RetrieverNotConfigured` error.
+
+`verified_answer` needs a retriever wired in at server construction time. Configuration is
+**programmatic only** — there is no environment-variable or import-by-string resolution,
+which would be a code-execution vector. Write a small launcher script that imports your
+own search function as a plain Python callable and passes it to `create_server`:
+
+```python
+# my_launcher.py  (a placeholder path — put this file wherever your project lives, e.g. C:/path/to/your/launcher.py)
+from kairos_ai_evidence.mcp.server import create_server
+
+from my_project.search import web_search  # your own retrieval function
+
+if __name__ == "__main__":
+    create_server(retriever=web_search).run()
+```
+
+```bash
+python /path/to/your/launcher.py
+```
+
+See `examples/mcp_server_launcher.py` (in the plugin's `examples/` directory) for a
+runnable version with an offline stub retriever — swap the stub for your own retrieval
+function following the pattern shown there.
+
+Once the server is running, point your MCP client at it and give it a system prompt that
+forces the tool call rather than leaving it optional:
+
+> For any question about events, results, or facts beyond your training cutoff, you MUST
+> call the `verified_answer` tool before answering, and answer only from its
+> `working_context`.
+
+Without that instruction, a model may just answer from memory and skip the firewall
+entirely — the tool being *available* doesn't make it *mandatory*.
+
 ---
 
 ## Next Steps

@@ -288,6 +288,54 @@ class TestBasicBehavior:
 
 
 # ---------------------------------------------------------------------------
+# Case 4 — score-cue reclassification (real-world-cases.md §4)
+# ---------------------------------------------------------------------------
+
+
+class TestScoreCueReclassification:
+    """Blueprint: `_infer_claim_kind` rule 1b — score-cue + matchup token."""
+
+    def test_score_cue_with_matchup_yields_event_outcome(self) -> None:
+        """Question-form claim with 'score' + 'vs' -> event_outcome (Case 4)."""
+        assert _infer_claim_kind("What was the score of USA vs Bosnia?") == "event_outcome"
+
+    def test_score_cue_without_matchup_stays_numeric(self) -> None:
+        """'score' with no matchup token -> stays numeric (non-sport use preserved)."""
+        assert _infer_claim_kind("Credit score reached 720") == "numeric"
+
+    def test_matchup_without_score_cue_unaffected(self) -> None:
+        """Matchup token alone, no score cue, no digit -> other (unaffected)."""
+        assert _infer_claim_kind("Who won USA vs Bosnia?") == "other"
+
+    def test_existing_kind_ordering_unchanged(self) -> None:
+        """Re-assert the four kinds from test_step_action_multiple_claims still hold."""
+        claims = [
+            "Belgium beat Senegal 3-2",
+            "The accord was signed on March 15, 2025",
+            "CO2 is 421 ppm",
+            "Python was created by Guido van Rossum",
+        ]
+        kinds = [_infer_claim_kind(c) for c in claims]
+        assert kinds == ["event_outcome", "temporal", "numeric", "other"]
+
+    def test_score_cue_versus_variant_triggers_reclassification(self) -> None:
+        """'versus' matchup token triggers reclassification, same as 'vs'."""
+        assert _infer_claim_kind("What was the score of USA versus Bosnia?") == "event_outcome"
+
+    def test_score_cue_against_variant_triggers_reclassification(self) -> None:
+        """'against' matchup token triggers reclassification, same as 'vs'."""
+        assert _infer_claim_kind("What was the score against Bosnia?") == "event_outcome"
+
+    def test_scoreline_cue_variant_triggers_reclassification(self) -> None:
+        """'scoreline' cue variant (score(?:line|board|s)?) triggers reclassification."""
+        assert _infer_claim_kind("What was the scoreline of USA vs Bosnia?") == "event_outcome"
+
+    def test_scoreboard_cue_variant_triggers_reclassification(self) -> None:
+        """'scoreboard' cue variant triggers reclassification."""
+        assert _infer_claim_kind("Check the scoreboard for USA vs Bosnia") == "event_outcome"
+
+
+# ---------------------------------------------------------------------------
 # G2b — _MAX_CLAIM_TEXT_LEN boundary (SEV-002 truncation cap)
 # ---------------------------------------------------------------------------
 
