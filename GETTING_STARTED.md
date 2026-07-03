@@ -1171,10 +1171,10 @@ prompt preamble with **deterministic verdicts** — no model-emitted scores.
 
 ### Install
 
-The plugin is a separate package that depends on `kairos-ai`:
+The plugin is a separate package that declares `kairos-ai>=0.5,<0.6` as a dependency, so a
+single install pulls in the core SDK automatically:
 
 ```bash
-pip install "kairos-ai>=0.5,<0.6"
 pip install kairos-ai-evidence
 ```
 

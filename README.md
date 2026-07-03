@@ -430,7 +430,7 @@ in the [Getting Started guide](GETTING_STARTED.md#14-evidence-engine-plugin) and
 
 ## Status
 
-**MVP COMPLETE, plus Adapters, Observability, and a Plugin System.** All modules are built with strict TDD (tests before code) and a full agent pipeline (architect, developer, code review, security audit, QA) for every module. Published to [PyPI](https://pypi.org/project/kairos-ai/) as `kairos-ai` — current version **0.5.0**, which adds the plugin runtime and the first Evidence Engine plugin.
+**MVP COMPLETE, plus Adapters, Observability, and a Plugin System.** All modules are built with strict TDD (tests before code) and a full agent pipeline (architect, developer, code review, security audit, QA) for every module. Published to [PyPI](https://pypi.org/project/kairos-ai/) as `kairos-ai` — current version **0.5.0**, which adds the plugin runtime and the first Evidence Engine plugin, [`kairos-ai-evidence`](https://pypi.org/project/kairos-ai-evidence/) **0.1.0** (`pip install kairos-ai-evidence`).
 
 **MVP — 12 of 12 modules complete**
 
@@ -465,9 +465,9 @@ in the [Getting Started guide](GETTING_STARTED.md#14-evidence-engine-plugin) and
 
 | Package | Status |
 |---|---|
-| `kairos-ai-evidence` (Evidence Engine — contract-validated evidence evaluation) | v0.1 feature-complete |
+| [`kairos-ai-evidence`](https://pypi.org/project/kairos-ai-evidence/) (Evidence Engine — contract-validated evidence evaluation) | Published — v0.1.0 |
 
-**2,150 tests passing** in the core SDK (99% coverage), plus **588 tests** in the `kairos-ai-evidence` plugin (99% coverage). Every module cleared the full agent pipeline — code review, security audit, and QA.
+**1,934 tests passing** in the core SDK (99% coverage), plus **588 tests** in the `kairos-ai-evidence` plugin (99% coverage). Every module cleared the full agent pipeline — code review, security audit, and QA.
 
 ---
 
