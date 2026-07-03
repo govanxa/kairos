@@ -32,6 +32,9 @@ from kairos_ai_evidence.evidence_evaluator import (
     _DATE_SPAN_RE,
     _DEFAULT_NOISE_RE,
     _SCORE_RE,
+    _UNANCHORED_NOTE,
+    _claim_is_anchored,
+    _is_declarative_assertion,
     _masked_spans,
     _significant_tokens,
     assign_independence_groups,
@@ -2125,3 +2128,411 @@ class TestNgramWordCapBoundary:
         source = _source(excerpt="The zephyrunique reading appears here only.")
         result = extract_values(claim, source)
         assert result == []
+
+
+# ---------------------------------------------------------------------------
+# Case 4 — claim-side value-type gating (real-world-cases.md §4)
+#
+# Groups (failure-paths first per TDD priority order):
+#   G1  Failure paths — full-pipeline Case 4 fixtures must yield insufficient,
+#       not conflicting; direct _claim_is_anchored unanchored assertions.
+#   G2  Boundary conditions — every branch of _claim_is_anchored /
+#       _is_declarative_assertion.
+#   G3  Regression — score-cue path (USA-Bosnia) and existing Case 1/2/numeric
+#       conformance tests must stay green (exercised by already-existing
+#       classes above; TestCases + TestVerdictConformance are unmodified).
+#   G4  Security — ReDoS corpus, structural-note constant, no-LLM (existing
+#       test_no_llm_in_evaluator_module already covers the module).
+#   G5  Serialization — gated packet JSON round-trip.
+# ---------------------------------------------------------------------------
+
+
+class TestCase4ClaimGatingFailurePaths:
+    """G1: full-pipeline Case 4 fixtures must resolve insufficient/unverifiable,
+    never conflicting — and the direct unanchored assertions that back it."""
+
+    def test_case4_who_won_yields_insufficient_not_conflicting(
+        self, case4_raw_docs: list[dict[str, Any]]
+    ) -> None:
+        """Case 4: 'Who won the the 2026 World Cup?' (verbatim typo). No source
+        names a winner; stray entity-adjacent numerics (attendance 3,605,357,
+        standings/fixture 202, scoreboard 3) must NOT manufacture a conflict."""
+        sources, rejected, _ = gate_documents(case4_raw_docs)
+        assert len(rejected) == 0, f"Unexpected rejections: {rejected}"
+        assert len(sources) == 5, f"Expected 5 sources, got {len(sources)}"
+
+        claim_records = extract_claims(["Who won the the 2026 World Cup?"])
+
+        evaluator = make_evidence_evaluator(today=date(2026, 7, 2))
+        ctx = _FakeCtx(
+            {
+                "claim_records": claim_records,
+                "sources": sources,
+                "as_of": "2026-07-02",
+                "query": "Who won the the 2026 World Cup?",
+            }
+        )
+        packet = evaluator(ctx)
+
+        assert packet["overall_verdict"] == "insufficient"
+        claim = packet["claims"][0]
+        assert claim["verdict"] == "unverifiable"
+        assert claim["extracted_values"] == []
+        assert packet["conflicts"] == []
+        assert claim["supporting_source_ids"] == []
+        assert claim["conflicting_source_ids"] == []
+
+    def test_case4_champions_league_string_side_yields_insufficient(
+        self, case4_champions_league_raw_docs: list[dict[str, Any]]
+    ) -> None:
+        """String-side companion: 'current UEFA Champions League holder' must
+        not manufacture a conflict from near-identical title fragments."""
+        sources, rejected, _ = gate_documents(case4_champions_league_raw_docs)
+        assert len(rejected) == 0, f"Unexpected rejections: {rejected}"
+
+        claim_records = extract_claims(["current UEFA Champions League holder"])
+
+        evaluator = make_evidence_evaluator(today=date(2026, 7, 2))
+        ctx = _FakeCtx(
+            {
+                "claim_records": claim_records,
+                "sources": sources,
+                "as_of": "2026-07-02",
+                "query": "current UEFA Champions League holder",
+            }
+        )
+        packet = evaluator(ctx)
+
+        assert packet["overall_verdict"] == "insufficient"
+        claim = packet["claims"][0]
+        assert claim["verdict"] == "unverifiable"
+        assert claim["extracted_values"] == []
+        assert packet["conflicts"] == []
+
+    def test_unanchored_numeric_year_only_claim_not_extracted(self) -> None:
+        """A numeric claim whose only digit is a bare year is unanchored."""
+        assert (
+            _claim_is_anchored(
+                {"claim_text": "Who won the 2026 World Cup?", "claim_kind": "numeric"}
+            )
+            is False
+        )
+
+    def test_unanchored_noun_phrase_not_extracted(self) -> None:
+        """A bare noun-phrase claim ('other' kind) with no assertion verb is unanchored."""
+        assert (
+            _claim_is_anchored(
+                {"claim_text": "current UEFA Champions League holder", "claim_kind": "other"}
+            )
+            is False
+        )
+
+
+class TestCase4ClaimGatingBoundaries:
+    """G2: every branch of _claim_is_anchored / _is_declarative_assertion."""
+
+    def test_anchored_numeric_real_number(self) -> None:
+        """A real (non-year) number survives masking -> anchored."""
+        assert (
+            _claim_is_anchored({"claim_text": "CO2 reached 421 ppm", "claim_kind": "numeric"})
+            is True
+        )
+
+    def test_numeric_with_year_and_real_number_is_anchored(self) -> None:
+        """A year plus a real number -> the real number survives -> anchored."""
+        assert (
+            _claim_is_anchored({"claim_text": "In 2026 CO2 hit 421 ppm", "claim_kind": "numeric"})
+            is True
+        )
+
+    def test_claim_only_a_date_is_anchored(self) -> None:
+        """Temporal claims are always anchored — the date IS the target value."""
+        assert (
+            _claim_is_anchored({"claim_text": "March 15, 2025", "claim_kind": "temporal"}) is True
+        )
+
+    def test_claim_digits_only_in_tournament_name_gated(self) -> None:
+        """A claim whose only digit is a tournament-name year is gated."""
+        assert (
+            _claim_is_anchored({"claim_text": "2026 World Cup winner", "claim_kind": "numeric"})
+            is False
+        )
+
+    def test_empty_ish_noun_phrase_gated(self) -> None:
+        """A bare noun phrase with no assertion verb is gated."""
+        assert _claim_is_anchored({"claim_text": "the champion", "claim_kind": "other"}) is False
+
+    def test_declarative_entity_is_anchored(self) -> None:
+        """A declarative entity-fact claim (assertion verb, non-question) is anchored."""
+        assert (
+            _claim_is_anchored(
+                {
+                    "claim_text": "Python was created by Guido van Rossum",
+                    "claim_kind": "other",
+                }
+            )
+            is True
+        )
+
+    def test_interrogative_entity_gated(self) -> None:
+        """A question-form entity claim is gated."""
+        assert (
+            _claim_is_anchored({"claim_text": "Who created Python?", "claim_kind": "other"})
+            is False
+        )
+
+    def test_empty_claim_text_gated(self) -> None:
+        """Empty/whitespace-only claim_text -> gated (conservative default)."""
+        assert _claim_is_anchored({"claim_text": "   ", "claim_kind": "other"}) is False
+        assert _claim_is_anchored({"claim_text": "", "claim_kind": "numeric"}) is False
+
+    def test_unknown_claim_kind_gated(self) -> None:
+        """An unrecognized claim_kind is conservatively gated (total function)."""
+        assert _claim_is_anchored({"claim_text": "something", "claim_kind": "bogus_kind"}) is False
+
+    def test_is_declarative_assertion_direct(self) -> None:
+        """Unit cases for _is_declarative_assertion's four branches."""
+        # '?'-terminated -> False
+        assert _is_declarative_assertion("Who won the World Cup?") is False
+        # WH-opener (no '?') -> False
+        assert _is_declarative_assertion("who won the world cup") is False
+        # Noun phrase, no verb -> False
+        assert _is_declarative_assertion("current UEFA Champions League holder") is False
+        # Verb-bearing declarative -> True
+        assert _is_declarative_assertion("Python was created by Guido van Rossum") is True
+
+    def test_is_declarative_assertion_empty_string_false(self) -> None:
+        """Empty string is not a declarative assertion."""
+        assert _is_declarative_assertion("") is False
+        assert _is_declarative_assertion("   ") is False
+
+
+class TestCase4Regression:
+    """G3: the score-cue reclassification path must stay `verified` — the fix
+    must not regress the working extraction path it depends on."""
+
+    def test_usa_bosnia_question_stays_verified(
+        self, usa_bosnia_raw_docs: list[dict[str, Any]]
+    ) -> None:
+        """'What was the score of USA vs Bosnia?' (D3 claims=[query] shape):
+        score-cue reclassifies to event_outcome; four independent domains agree
+        on '2-0' -> independent_multi_source -> verified. Explicitly proves the
+        Case 4 gate does not regress the score-cue anchored path."""
+        sources, rejected, _ = gate_documents(usa_bosnia_raw_docs)
+        assert len(rejected) == 0, f"Unexpected rejections: {rejected}"
+
+        claim_records = extract_claims(["What was the score of USA vs Bosnia?"])
+        assert claim_records[0]["claim_kind"] == "event_outcome"
+
+        evaluator = make_evidence_evaluator(today=date(2026, 7, 2))
+        ctx = _FakeCtx(
+            {
+                "claim_records": claim_records,
+                "sources": sources,
+                "as_of": "2026-07-02",
+                "query": "What was the score of USA vs Bosnia?",
+            }
+        )
+        packet = evaluator(ctx)
+
+        claim = packet["claims"][0]
+        assert all(ev["value"] == "2-0" for ev in claim["extracted_values"])
+        assert claim["support_level"] == "independent_multi_source"
+        assert packet["overall_verdict"] == "verified"
+
+
+class TestCase4Security:
+    """G4: ReDoS discipline on the new patterns; structural-note constant."""
+
+    def test_new_patterns_survive_redos_corpus(self) -> None:
+        """T9: _SCORE_CUE_RE, _MATCHUP_RE, and _claim_is_anchored complete
+        well under 1s on pathological 2000-char inputs."""
+        from kairos_ai_evidence.claim_extractor import (
+            _MATCHUP_RE,
+            _MAX_CLAIM_TEXT_LEN,
+            _SCORE_CUE_RE,
+        )
+
+        pathological = ("score " * 400)[:_MAX_CLAIM_TEXT_LEN]
+        start = time.monotonic()
+        _SCORE_CUE_RE.search(pathological)
+        _MATCHUP_RE.search(pathological)
+        pathological_numeric = "In 2026 " + ("9" * 1000) + "." + ("9" * 1000)
+        _claim_is_anchored({"claim_text": pathological_numeric, "claim_kind": "numeric"})
+        pathological_words = "against " * 400
+        _claim_is_anchored({"claim_text": pathological_words, "claim_kind": "other"})
+        assert time.monotonic() - start < 1.0, "ReDoS: new patterns took >= 1s"
+
+    def test_unanchored_note_is_structural_constant(
+        self, source_with_sentinel_excerpt: dict[str, Any]
+    ) -> None:
+        """T6: gated claim's notes == _UNANCHORED_NOTE; no web-derived substring,
+        no INJECTION_SENTINEL leakage even when a poisoned source is present."""
+        evaluator = make_evidence_evaluator(today=date(2026, 7, 2))
+        claim_records = extract_claims(["Who won the 2026 World Cup?"])
+        ctx = _FakeCtx(
+            {
+                "claim_records": claim_records,
+                "sources": [source_with_sentinel_excerpt],
+                "as_of": "2026-07-02",
+                "query": "Who won the 2026 World Cup?",
+            }
+        )
+        packet = evaluator(ctx)
+        claim = packet["claims"][0]
+        assert claim["notes"] == _UNANCHORED_NOTE
+        assert INJECTION_SENTINEL not in claim["notes"]
+
+    def test_no_llm_in_evaluator_module_case4_helpers(self) -> None:
+        """EE-3: the new Case 4 helpers introduce no LLM adapter / model_fn / network."""
+        import kairos_ai_evidence.evidence_evaluator as mod
+
+        source_code = inspect.getsource(mod)
+        for forbidden in ("ModelAdapter", "anthropic", "openai", "model_fn"):
+            assert forbidden not in source_code, (
+                f"Found forbidden identifier {forbidden!r} in evidence_evaluator"
+            )
+
+
+class TestCase4Serialization:
+    """G5: the gated Case 4 packet round-trips through JSON unchanged."""
+
+    def test_gated_packet_round_trips_json(self, case4_raw_docs: list[dict[str, Any]]) -> None:
+        sources, _, _ = gate_documents(case4_raw_docs)
+        claim_records = extract_claims(["Who won the the 2026 World Cup?"])
+        evaluator = make_evidence_evaluator(today=date(2026, 7, 2))
+        ctx = _FakeCtx(
+            {
+                "claim_records": claim_records,
+                "sources": sources,
+                "as_of": "2026-07-02",
+                "query": "Who won the the 2026 World Cup?",
+            }
+        )
+        packet = evaluator(ctx)
+        serialized = json.loads(json.dumps(packet))
+        assert serialized == packet
+
+
+class TestCase4TimingLockIn:
+    """Security advisory A2: timing lock-in on the Case 4 classifier helpers.
+
+    ``_infer_claim_kind`` (claim_extractor), ``_claim_is_anchored``, and
+    ``_is_declarative_assertion`` must each complete well under 1s (<0.5s) on
+    pathological 2000-char inputs (cue floods, matchup floods, digit floods,
+    whitespace/punctuation floods).  Pins the linear-time property so a future
+    edit that reintroduces a super-linear pattern is caught immediately (T9).
+    """
+
+    # Pathological 2000-char inputs shared across the three helpers.
+    _PAYLOADS: tuple[str, ...] = (
+        ("score " * 333)[:2000],
+        ("vs " * 666)[:2000],
+        ("won " * 500)[:2000],
+        ("1234567890" * 200)[:2000],
+        ("   \t   " * 285)[:2000],
+        (".,;:!? " * 285)[:2000],
+    )
+
+    def test_infer_claim_kind_fast_on_pathological_inputs(self) -> None:
+        from kairos_ai_evidence.claim_extractor import _infer_claim_kind
+
+        start = time.monotonic()
+        for payload in self._PAYLOADS:
+            _infer_claim_kind(payload)
+        assert time.monotonic() - start < 0.5, "_infer_claim_kind too slow on 2000-char inputs"
+
+    def test_claim_is_anchored_fast_on_pathological_inputs(self) -> None:
+        start = time.monotonic()
+        for kind in ("numeric", "other", "entity_fact", "event_outcome", "temporal", "bogus"):
+            for payload in self._PAYLOADS:
+                _claim_is_anchored({"claim_text": payload, "claim_kind": kind})
+        assert time.monotonic() - start < 0.5, "_claim_is_anchored too slow on 2000-char inputs"
+
+    def test_is_declarative_assertion_fast_on_pathological_inputs(self) -> None:
+        start = time.monotonic()
+        for payload in self._PAYLOADS:
+            _is_declarative_assertion(payload)
+        assert time.monotonic() - start < 0.5, (
+            "_is_declarative_assertion too slow on 2000-char inputs"
+        )
+
+
+class TestCase4ClaimGatingGaps:
+    """QA gap-hunt: unicode/emoji handling, punctuation-only claims, and
+    per-claim verdict independence in a mixed anchored+unanchored run."""
+
+    def test_is_declarative_assertion_unicode_emoji(self) -> None:
+        """Unicode/emoji text must be handled without crashing and classified
+        by the same verb/question rules (does not depend on ASCII)."""
+        # Emoji + non-ASCII with a recognized assertion verb -> declarative.
+        assert _is_declarative_assertion("Éire 🇮🇪 became independent in 1922") is True
+        # Non-ASCII bare noun phrase, no assertion verb -> not declarative.
+        assert _is_declarative_assertion("current 🏆 champion café") is False
+        # Emoji-only text -> not declarative, no crash.
+        assert _is_declarative_assertion("🏆🥇⚽") is False
+        # Emoji-decorated question -> gated by the '?' rule.
+        assert _is_declarative_assertion("Who won the 🏆 2026 World Cup?") is False
+
+    def test_punctuation_only_claim_gated(self) -> None:
+        """A claim that is only punctuation survives ``strip()`` (non-whitespace)
+        but yields no assertion verb and no surviving number -> gated, no crash."""
+        punct = "!!! ,,, ..."
+        assert _is_declarative_assertion(punct) is False
+        assert _claim_is_anchored({"claim_text": punct, "claim_kind": "other"}) is False
+        assert _claim_is_anchored({"claim_text": punct, "claim_kind": "numeric"}) is False
+
+    def test_whitespace_only_claim_gated(self) -> None:
+        """A whitespace-only claim is gated across all kinds (empty after strip)."""
+        ws = "   \t  \n  "
+        assert _is_declarative_assertion(ws) is False
+        assert _claim_is_anchored({"claim_text": ws, "claim_kind": "numeric"}) is False
+        assert _claim_is_anchored({"claim_text": ws, "claim_kind": "other"}) is False
+        # Even the always-anchored kinds are gated when there is no text at all.
+        assert _claim_is_anchored({"claim_text": ws, "claim_kind": "event_outcome"}) is False
+
+    def test_mixed_anchored_and_unanchored_claims_are_independent(
+        self, usa_bosnia_raw_docs: list[dict[str, Any]]
+    ) -> None:
+        """One anchored (score) claim and one unanchored (winner) claim in the
+        SAME run: verdicts must be independent.  The anchored claim stays
+        `supported` with its extracted values; the unanchored claim is gated to
+        `unverifiable` with no extracted values; overall is `insufficient`
+        (not all supported), with no manufactured conflict."""
+        sources, rejected, _ = gate_documents(usa_bosnia_raw_docs)
+        assert len(rejected) == 0, f"Unexpected rejections: {rejected}"
+
+        claim_records = extract_claims(
+            ["What was the score of USA vs Bosnia?", "Who won the 2026 World Cup?"]
+        )
+        evaluator = make_evidence_evaluator(today=date(2026, 7, 2))
+        ctx = _FakeCtx(
+            {
+                "claim_records": claim_records,
+                "sources": sources,
+                "as_of": "2026-07-02",
+                "query": "USA vs Bosnia score and 2026 World Cup winner",
+            }
+        )
+        packet = evaluator(ctx)
+
+        anchored = packet["claims"][0]
+        gated = packet["claims"][1]
+
+        # Anchored claim is unaffected by the gate.
+        assert anchored["verdict"] == "supported"
+        assert anchored["extracted_values"] != []
+        assert all(ev["value"] == "2-0" for ev in anchored["extracted_values"])
+        assert anchored["support_level"] == "independent_multi_source"
+        assert anchored["notes"] != _UNANCHORED_NOTE  # never stamped as unanchored
+
+        # Unanchored claim is gated independently.
+        assert gated["verdict"] == "unverifiable"
+        assert gated["extracted_values"] == []
+        assert gated["supporting_source_ids"] == []
+        assert gated["conflicting_source_ids"] == []
+        assert gated["notes"] == _UNANCHORED_NOTE
+
+        # Packet level: one supported + one unverifiable -> insufficient, no conflict.
+        assert packet["overall_verdict"] == "insufficient"
+        assert packet["conflicts"] == []

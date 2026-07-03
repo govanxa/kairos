@@ -309,6 +309,161 @@ def _overlaps_masked(cand_start: int, cand_end: int, masked: list[tuple[int, int
 
 
 # ---------------------------------------------------------------------------
+# Claim-side value-type gating (Case 4 — real-world-cases.md §4)
+#
+# A claim from which the extractor derives no anchored value type (no score
+# pair, no claim-anchored numeric, no temporal target, no declarative-entity
+# assertion) must not enter value matching at all: its sources yield no
+# comparable values, so the claim resolves `unverifiable` and the packet
+# resolves `insufficient` — never a spurious `conflicting` manufactured from
+# absence (design inputs #10-#13).
+# ---------------------------------------------------------------------------
+
+# WH/auxiliary openers that mark a claim as a question (string-side gate only).
+_INTERROGATIVE_OPENERS: frozenset[str] = frozenset(
+    {
+        "who",
+        "what",
+        "when",
+        "where",
+        "which",
+        "whom",
+        "whose",
+        "why",
+        "how",
+        "is",
+        "are",
+        "was",
+        "were",
+        "do",
+        "does",
+        "did",
+        "can",
+        "could",
+        "will",
+        "would",
+        "should",
+        "has",
+        "have",
+        "had",
+    }
+)
+
+# Assertion/predicate verbs — presence signals a declarative proposition with a
+# stated value.  This is a SIGNAL, not an exhaustive lexicon: a verb missing from
+# this set gates a genuine declarative claim to `unverifiable` (the SAFE direction —
+# under-claiming, never a false verified/conflicting).  Extend as real usage warrants.
+_ASSERTION_VERBS: frozenset[str] = frozenset(
+    {
+        "is",
+        "are",
+        "was",
+        "were",
+        "be",
+        "been",
+        "being",
+        "has",
+        "have",
+        "had",
+        "reached",
+        "rose",
+        "fell",
+        "grew",
+        "hit",
+        "set",
+        "became",
+        "remained",
+        "increased",
+        "decreased",
+        "won",
+        "beat",
+        "defeated",
+        "drew",
+        "scored",
+        "led",
+        "created",
+        "signed",
+        "adopted",
+        "launched",
+        "announced",
+        "named",
+        "elected",
+        "approved",
+        "passed",
+        "rejected",
+        "published",
+        "released",
+        "said",
+        "reported",
+    }
+)
+
+# Optional structural note stamped on gated claims (constant string, never web text — T6).
+_UNANCHORED_NOTE: str = "unanchored: claim carries no extractable value target"
+
+
+def _is_declarative_assertion(claim_text: str) -> bool:
+    """True if a non-score/non-numeric/non-temporal claim STATES a checkable value.
+
+    Declarative iff: not ending in '?', first significant token not an
+    interrogative opener, AND at least one assertion verb present.  Questions and
+    bare noun phrases ("current UEFA Champions League holder") return False.
+
+    Args:
+        claim_text: The claim string.
+
+    Returns:
+        True if the claim reads as a declarative assertion.
+    """
+    stripped = claim_text.strip()
+    if not stripped or stripped.endswith("?"):
+        return False
+    tokens = [t.strip(".,;:!?\"'") for t in stripped.lower().split()]
+    if not tokens:
+        return False
+    if tokens[0] in _INTERROGATIVE_OPENERS:
+        return False
+    return any(t in _ASSERTION_VERBS for t in tokens)
+
+
+def _claim_is_anchored(claim: dict[str, Any]) -> bool:
+    """True if the claim yields a typed value target the extractor can compare.
+
+    - event_outcome / temporal : always anchored (typed score / date target).
+    - numeric                  : anchored iff a numeric token survives year/date/
+                                 noise masking of the claim text (a real number,
+                                 not merely a tournament year like "2026").
+    - entity_fact / other      : anchored iff ``_is_declarative_assertion`` (narrower
+                                 string-side rule — questions/noun phrases gated).
+    Unanchored -> evaluator skips value matching -> ``extracted_values == []`` ->
+    ``derive_verdict`` priority 2 -> ``unverifiable`` -> overall ``insufficient``.
+    Total function: never raises; unknown kinds -> False (conservative).
+
+    Args:
+        claim: ClaimRecord dict with ``claim_text`` and ``claim_kind``.
+
+    Returns:
+        True if the claim participates in value matching.
+    """
+    text = str(claim.get("claim_text") or "")
+    if not text.strip():
+        return False
+    kind = str(claim.get("claim_kind") or "other")
+    match kind:
+        case "event_outcome" | "temporal":
+            return True
+        case "numeric":
+            masked = _masked_spans(text, ())  # masks _DATE_SPAN_RE, noise, _BARE_YEAR_RE
+            return any(
+                not _overlaps_masked(m.start(), m.end(), masked) for m in _NUMBER_RE.finditer(text)
+            )
+        case "entity_fact" | "other":
+            return _is_declarative_assertion(text)
+        case _:
+            return False
+
+
+# ---------------------------------------------------------------------------
 # Public pure functions — extraction core
 # ---------------------------------------------------------------------------
 
@@ -912,15 +1067,19 @@ def make_evidence_evaluator(
                     continue
                 claim = dict(cr)
 
-                # Extract values from every active source
+                # Extract values from every active source — but only for claims
+                # that name a typed value target (Case 4: claim-side gating).
                 extracted: list[dict[str, str]] = []
-                for sid in sorted(active_ids):  # sorted for deterministic order
-                    src = sources_by_id.get(sid)
-                    if src is None:
-                        continue
-                    v = extract_values(claim, src, extra_noise=noise_extra)
-                    if v:
-                        extracted.append({"source_id": sid, "value": v[0]})
+                if _claim_is_anchored(claim):
+                    for sid in sorted(active_ids):  # sorted for deterministic order
+                        src = sources_by_id.get(sid)
+                        if src is None:
+                            continue
+                        v = extract_values(claim, src, extra_noise=noise_extra)
+                        if v:
+                            extracted.append({"source_id": sid, "value": v[0]})
+                else:
+                    claim["notes"] = _UNANCHORED_NOTE  # structural constant, aids C4 audit
 
                 claim["extracted_values"] = extracted
 
