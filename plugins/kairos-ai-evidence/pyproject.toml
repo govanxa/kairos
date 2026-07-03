@@ -20,6 +20,18 @@ evidence = "kairos_ai_evidence:MANIFEST"
 [tool.hatch.build.targets.wheel]
 packages = ["kairos_ai_evidence"]
 
+# Explicit sdist allowlist. Hatchling's default sdist sweeps the whole working tree
+# (including __pycache__/.ruff_cache/.pytest_cache). Ship ONLY the package + public
+# metadata + runnable examples so the published sdist is deterministic and clean.
+[tool.hatch.build.targets.sdist]
+include = [
+    "/kairos_ai_evidence",
+    "/examples",
+    "/README.md",
+    "/LICENSE",
+    "/pyproject.toml",
+]
+
 # --- Tool Configuration ---
 
 [tool.ruff]
