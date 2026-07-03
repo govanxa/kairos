@@ -27,6 +27,20 @@ Without Kairos, agents silently pass broken outputs between steps, lose context 
 
 ---
 
+## Which package do I need?
+
+This repo ships two packages. One is an engine; the other is the first machine built with it.
+
+| You want to… | Install | What it is |
+|---|---|---|
+| Build your own AI agent workflow with contracts, scoped state, and injection-safe retries | [`kairos-ai`](https://pypi.org/project/kairos-ai/) | The workflow engine — general-purpose infrastructure. Bring your own steps. |
+| Stop your model from refusing or hallucinating current facts it retrieved from the web | [`kairos-ai-evidence`](https://pypi.org/project/kairos-ai-evidence/) | A finished product built on the engine: a firewall between web search results and your model's prompt, with deterministic `verified` / `conflicting` / `insufficient` verdicts. Also runs as an [MCP server](#mcp-server). No Kairos knowledge required. |
+| Build something like the Evidence Engine for your own domain | Both | Use the SDK; read the [plugin's source](plugins/kairos-ai-evidence/) as the worked example. |
+
+They version independently, and the core stays zero-dependency — installing `kairos-ai` never pulls in evidence-evaluation code. Details: [Evidence Engine plugin](#evidence-engine-plugin) below.
+
+---
+
 ## Installation
 
 ```bash
